@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListVendorInvoices, useListExpenses, useCreateVendorInvoice, useCreateExpense, useListSuppliers } from "@workspace/api-client-react";
+import { useListVendorInvoices, useListExpenses, useCreateVendorInvoice, useCreateExpense, useListSuppliers, useListCategories } from "@workspace/api-client-react";
 import { useCompany } from "@/hooks/use-company";
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Modal, Input, Label, Select } from "@/components/shared-ui";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -136,8 +136,10 @@ function CreateVendorInvoiceModal({ isOpen, onClose, companyId }: { isOpen: bool
   const { toast } = useToast();
   const createMutation = useCreateVendorInvoice();
   const { data: suppliers } = useListSuppliers({ companyId });
+  const { data: categories } = useListCategories();
 
   const [supplierId, setSupplierId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [description, setDescription] = useState("");
   const [subtotal, setSubtotal] = useState("");
@@ -186,6 +188,13 @@ function CreateVendorInvoiceModal({ isOpen, onClose, companyId }: { isOpen: bool
             <Label>Nº Factura Proveedor</Label>
             <Input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="Ej: FP-2026-001" />
           </div>
+          <div>
+            <Label>Categoría</Label>
+            <Select value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+              <option value="">Sin categoría</option>
+              {categories?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </div>
         </div>
         <div>
           <Label>Descripción</Label>
@@ -232,8 +241,10 @@ function CreateExpenseModal({ isOpen, onClose, companyId }: { isOpen: boolean; o
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const createMutation = useCreateExpense();
+  const { data: categories } = useListCategories();
 
   const [description, setDescription] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [amount, setAmount] = useState("");
   const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split("T")[0]);
 
@@ -267,6 +278,13 @@ function CreateExpenseModal({ isOpen, onClose, companyId }: { isOpen: boolean; o
         <div>
           <Label>Concepto</Label>
           <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Descripción del gasto" />
+        </div>
+        <div>
+          <Label>Categoría</Label>
+          <Select value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+            <option value="">Sin categoría</option>
+            {categories?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </Select>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>

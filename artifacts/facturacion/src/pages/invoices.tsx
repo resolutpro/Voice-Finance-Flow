@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListInvoices, useCreateInvoice, useUpdateInvoice, useUpdateInvoiceStatus, useListClients, useGetNextInvoiceNumber } from "@workspace/api-client-react";
+import { useListInvoices, useCreateInvoice, useUpdateInvoice, useUpdateInvoiceStatus, useListClients, useListProjects, useGetNextInvoiceNumber } from "@workspace/api-client-react";
 import { useCompany } from "@/hooks/use-company";
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Modal, Input, Label, Select } from "@/components/shared-ui";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -235,8 +235,10 @@ function EditInvoiceModal({ invoice, onClose }: { invoice: InvoiceData; onClose:
   const { activeCompanyId } = useCompany();
   const updateMutation = useUpdateInvoice();
   const { data: clients } = useListClients(activeCompanyId ? { companyId: activeCompanyId } : undefined);
+  const { data: projects } = useListProjects(activeCompanyId ? { companyId: activeCompanyId } : undefined);
 
   const [clientId, setClientId] = useState(String(invoice.clientId || ""));
+  const [projectId, setProjectId] = useState("");
   const [issueDate, setIssueDate] = useState(invoice.issueDate);
   const [dueDate, setDueDate] = useState(invoice.dueDate || "");
   const [items, setItems] = useState<InvoiceItem[]>(
@@ -286,6 +288,13 @@ function EditInvoiceModal({ invoice, onClose }: { invoice: InvoiceData; onClose:
             <Select value={clientId} onChange={e => setClientId(e.target.value)}>
               <option value="">Selecciona un cliente...</option>
               {clients?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </div>
+          <div>
+            <Label>Proyecto</Label>
+            <Select value={projectId} onChange={e => setProjectId(e.target.value)}>
+              <option value="">Sin proyecto</option>
+              {projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </Select>
           </div>
           <div>
@@ -348,9 +357,11 @@ function CreateInvoiceModal({ isOpen, onClose, companyId }: { isOpen: boolean, o
   const { toast } = useToast();
   const createMutation = useCreateInvoice();
   const { data: clients } = useListClients({ companyId });
+  const { data: projects } = useListProjects({ companyId });
   const { data: nextNumberData } = useGetNextInvoiceNumber({ companyId });
 
   const [clientId, setClientId] = useState("");
+  const [projectId, setProjectId] = useState("");
   const autoInvoiceNumber = nextNumberData?.invoiceNumber || "";
   const [invoiceNumberOverride, setInvoiceNumberOverride] = useState("");
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
@@ -403,6 +414,13 @@ function CreateInvoiceModal({ isOpen, onClose, companyId }: { isOpen: boolean, o
             <Select value={clientId} onChange={e => setClientId(e.target.value)}>
               <option value="">Selecciona un cliente...</option>
               {clients?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </div>
+          <div>
+            <Label>Proyecto</Label>
+            <Select value={projectId} onChange={e => setProjectId(e.target.value)}>
+              <option value="">Sin proyecto</option>
+              {projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </Select>
           </div>
           <div>

@@ -1,14 +1,25 @@
-import { useGetDashboard } from "@workspace/api-client-react";
+import { useGetDashboard, useGetCashForecast } from "@workspace/api-client-react";
 import { useCompany } from "@/hooks/use-company";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/shared-ui";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Wallet, ArrowUpRight, ArrowDownRight, AlertTriangle, Clock } from "lucide-react";
+import { Wallet, ArrowUpRight, ArrowDownRight, AlertTriangle, Clock, TrendingUp } from "lucide-react";
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 
 export default function Dashboard() {
   const { activeCompanyId } = useCompany();
   const { data: dashboard, isLoading } = useGetDashboard(
     activeCompanyId ? { companyId: activeCompanyId } : undefined
   );
+  const { data: forecast } = useGetCashForecast(
+    activeCompanyId ? { companyId: activeCompanyId, weeks: 6 } : { weeks: 6 }
+  );
+
+  const chartData = forecast?.weeks.map(w => ({
+    name: `Sem ${w.weekStart.substring(5, 10)}`,
+    Ingresos: Number(w.expectedIncome),
+    Gastos: Number(w.expectedExpenses),
+    Saldo: Number(w.projectedBalance),
+  })) || [];
 
   if (isLoading) {
     return <div className="h-64 flex items-center justify-center animate-pulse text-muted-foreground">Cargando métricas...</div>;
@@ -123,7 +134,35 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Recent Invoices Table */}
+      {chartData.length > 0 && (
+        <Card className="shadow-lg border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-primary" /> Previsión de Caja
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }} dx={-10} tickFormatter={(val) => `€${val/1000}k`} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    formatter={(value: number) => formatCurrency(value)}
+                  />
+                  <ReferenceLine y={0} stroke="hsl(var(--destructive))" strokeDasharray="3 3" />
+                  <Bar dataKey="Ingresos" fill="hsl(142.1 76.2% 36.3%)" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                  <Bar dataKey="Gastos" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                  <Line type="monotone" dataKey="Saldo" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ r: 3, strokeWidth: 2 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Últimas Facturas Emitidas</CardTitle>
