@@ -16,7 +16,12 @@ export default function PurchasesPage() {
   const { data: invoices, isLoading: loadingInvoices } = useListVendorInvoices(activeCompanyId ? { companyId: activeCompanyId } : undefined);
   const { data: expenses, isLoading: loadingExpenses } = useListExpenses(activeCompanyId ? { companyId: activeCompanyId } : undefined);
 
+  const { toast } = useToast();
   const handleNewClick = () => {
+    if (!activeCompanyId) {
+      toast({ title: "Selecciona una empresa", description: "Debes seleccionar una empresa específica para crear registros.", variant: "destructive" });
+      return;
+    }
     if (activeTab === "invoices") setIsCreateInvoiceOpen(true);
     else setIsCreateExpenseOpen(true);
   };
@@ -116,8 +121,12 @@ export default function PurchasesPage() {
         </CardContent>
       </Card>
 
-      <CreateVendorInvoiceModal isOpen={isCreateInvoiceOpen} onClose={() => setIsCreateInvoiceOpen(false)} companyId={activeCompanyId || 1} />
-      <CreateExpenseModal isOpen={isCreateExpenseOpen} onClose={() => setIsCreateExpenseOpen(false)} companyId={activeCompanyId || 1} />
+      {activeCompanyId && (
+        <>
+          <CreateVendorInvoiceModal isOpen={isCreateInvoiceOpen} onClose={() => setIsCreateInvoiceOpen(false)} companyId={activeCompanyId} />
+          <CreateExpenseModal isOpen={isCreateExpenseOpen} onClose={() => setIsCreateExpenseOpen(false)} companyId={activeCompanyId} />
+        </>
+      )}
     </div>
   );
 }

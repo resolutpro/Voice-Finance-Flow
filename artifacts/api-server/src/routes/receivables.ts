@@ -1,16 +1,33 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import { db, receivablesTable } from "@workspace/db";
+import { z } from "zod";
 
 const router: IRouter = Router();
 
+const ListReceivablesQuery = z.object({
+  companyId: z.coerce.number().optional(),
+  status: z.string().optional(),
+});
+
+const CreateReceivableBody = z.object({
+  companyId: z.number(),
+  clientId: z.number().optional().nullable(),
+  invoiceId: z.number().optional().nullable(),
+  description: z.string().min(1),
+  amount: z.string(),
+  paidAmount: z.string().optional(),
+  dueDate: z.string().optional().nullable(),
+  status: z.string().optional(),
+});
+
 router.get("/receivables", async (req, res): Promise<void> => {
-  const companyId = req.query.companyId ? parseInt(String(req.query.companyId), 10) : undefined;
-  const status = req.query.status ? String(req.query.status) : undefined;
+  const query = ListReceivablesQuery.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
 
   const conditions = [];
-  if (companyId) conditions.push(eq(receivablesTable.companyId, companyId));
-  if (status) conditions.push(eq(receivablesTable.status, status));
+  if (query.data.companyId) conditions.push(eq(receivablesTable.companyId, query.data.companyId));
+  if (query.data.status) conditions.push(eq(receivablesTable.status, query.data.status));
 
   const result = await db.select().from(receivablesTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined);
@@ -18,20 +35,17 @@ router.get("/receivables", async (req, res): Promise<void> => {
 });
 
 router.post("/receivables", async (req, res): Promise<void> => {
-  const { companyId, clientId, invoiceId, description, amount, paidAmount, dueDate, status } = req.body;
-  if (!companyId || !description) {
-    res.status(400).json({ error: "companyId and description are required" });
-    return;
-  }
+  const parsed = CreateReceivableBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [receivable] = await db.insert(receivablesTable).values({
-    companyId,
-    clientId: clientId ?? null,
-    invoiceId: invoiceId ?? null,
-    description,
-    amount: amount || "0.00",
-    paidAmount: paidAmount || "0.00",
-    dueDate: dueDate ?? null,
-    status: status || "pending",
+    companyId: parsed.data.companyId,
+    clientId: parsed.data.clientId ?? null,
+    invoiceId: parsed.data.invoiceId ?? null,
+    description: parsed.data.description,
+    amount: parsed.data.amount,
+    paidAmount: parsed.data.paidAmount || "0.00",
+    dueDate: parsed.data.dueDate ?? null,
+    status: parsed.data.status || "pending",
   }).returning();
   res.status(201).json(receivable);
 });

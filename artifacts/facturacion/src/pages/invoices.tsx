@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useListInvoices, useCreateInvoice, useUpdateInvoiceStatus, useListClients, useGetNextInvoiceNumber } from "@workspace/api-client-react";
+import { useListInvoices, useCreateInvoice, useUpdateInvoice, useUpdateInvoiceStatus, useListClients, useGetNextInvoiceNumber } from "@workspace/api-client-react";
 import { useCompany } from "@/hooks/use-company";
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Modal, Input, Label, Select } from "@/components/shared-ui";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Plus, Search, FileText, Trash2, Download, CheckCircle, Send, MoreVertical } from "lucide-react";
+import { Plus, Search, FileText, Trash2, Download, CheckCircle, Send, MoreVertical, Edit2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -15,13 +15,35 @@ const statusLabels: Record<string, string> = {
   paid: "Cobrada",
   overdue: "Vencida",
   cancelled: "Anulada",
+  partially_paid: "Parcial",
 };
+
+interface InvoiceItem {
+  description: string;
+  quantity: string;
+  unitPrice: string;
+}
+
+interface InvoiceData {
+  id: number;
+  invoiceNumber: string;
+  clientId: number | null;
+  clientName: string | null;
+  issueDate: string;
+  dueDate: string | null;
+  status: string;
+  total: string;
+  subtotal: string | null;
+  taxAmount: string | null;
+  items?: Array<{ description: string; quantity: string; unitPrice: string; amount: string }>;
+}
 
 export default function InvoicesPage() {
   const { activeCompanyId } = useCompany();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<InvoiceData | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
@@ -52,6 +74,23 @@ export default function InvoicesPage() {
     window.open(url, "_blank");
   };
 
+  const handleCreateClick = () => {
+    if (!activeCompanyId) {
+      toast({ title: "Selecciona una empresa", description: "Debes seleccionar una empresa específica para crear facturas.", variant: "destructive" });
+      return;
+    }
+    setIsCreateOpen(true);
+  };
+
+  const handleEditClick = (inv: InvoiceData) => {
+    if (inv.status === "paid" || inv.status === "cancelled") {
+      toast({ title: "No editable", description: "Las facturas cobradas o anuladas no se pueden editar.", variant: "destructive" });
+      return;
+    }
+    setEditingInvoice(inv);
+    setMenuOpenId(null);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -59,7 +98,7 @@ export default function InvoicesPage() {
           <h2 className="text-3xl font-display font-bold text-foreground">Facturas Emitidas</h2>
           <p className="text-muted-foreground">Gestiona la facturación a clientes</p>
         </div>
-        <Button onClick={() => setIsCreateOpen(true)} className="gap-2 shadow-lg shadow-primary/20">
+        <Button onClick={handleCreateClick} className="gap-2 shadow-lg shadow-primary/20">
           <Plus className="w-4 h-4" /> Nueva Factura
         </Button>
       </div>
@@ -88,7 +127,7 @@ export default function InvoicesPage() {
               </div>
               <h3 className="text-lg font-semibold mb-1">No hay facturas</h3>
               <p className="text-muted-foreground mb-6">Aún no has emitido ninguna factura para esta selección.</p>
-              <Button onClick={() => setIsCreateOpen(true)} variant="outline">Crear la primera</Button>
+              <Button onClick={handleCreateClick} variant="outline">Crear la primera</Button>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -126,6 +165,15 @@ export default function InvoicesPage() {
                           >
                             <Download className="w-4 h-4" />
                           </button>
+                          {inv.status !== "paid" && inv.status !== "cancelled" && (
+                            <button
+                              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-primary transition-colors"
+                              title="Editar factura"
+                              onClick={() => handleEditClick(inv as InvoiceData)}
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
                           <div className="relative">
                             <button
                               className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-primary transition-colors"
@@ -154,7 +202,7 @@ export default function InvoicesPage() {
                                     <Trash2 className="w-3.5 h-3.5" /> Anular factura
                                   </button>
                                 )}
-                                {inv.status === "paid" && (
+                                {(inv.status === "paid" || inv.status === "cancelled") && (
                                   <span className="w-full px-4 py-2 text-xs text-muted-foreground block">Sin acciones disponibles</span>
                                 )}
                               </div>
@@ -171,8 +219,127 @@ export default function InvoicesPage() {
         </CardContent>
       </Card>
 
-      <CreateInvoiceModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} companyId={activeCompanyId || 1} />
+      {activeCompanyId && (
+        <CreateInvoiceModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} companyId={activeCompanyId} />
+      )}
+      {editingInvoice && (
+        <EditInvoiceModal invoice={editingInvoice} onClose={() => setEditingInvoice(null)} />
+      )}
     </div>
+  );
+}
+
+function EditInvoiceModal({ invoice, onClose }: { invoice: InvoiceData; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { activeCompanyId } = useCompany();
+  const updateMutation = useUpdateInvoice();
+  const { data: clients } = useListClients(activeCompanyId ? { companyId: activeCompanyId } : undefined);
+
+  const [clientId, setClientId] = useState(String(invoice.clientId || ""));
+  const [issueDate, setIssueDate] = useState(invoice.issueDate);
+  const [dueDate, setDueDate] = useState(invoice.dueDate || "");
+  const [items, setItems] = useState<InvoiceItem[]>(
+    invoice.items?.map(i => ({ description: i.description, quantity: i.quantity, unitPrice: i.unitPrice })) ||
+    [{ description: "", quantity: "1", unitPrice: "0" }]
+  );
+
+  const handleAddItem = () => setItems([...items, { description: "", quantity: "1", unitPrice: "0" }]);
+  const handleRemoveItem = (index: number) => setItems(items.filter((_, i) => i !== index));
+  const updateItem = (index: number, field: string, value: string) => {
+    const newItems = [...items];
+    newItems[index] = { ...newItems[index], [field]: value };
+    setItems(newItems);
+  };
+
+  const subtotal = items.reduce((acc, item) => acc + (parseFloat(item.quantity || "0") * parseFloat(item.unitPrice || "0")), 0);
+  const tax = subtotal * 0.21;
+  const total = subtotal + tax;
+
+  const handleSubmit = () => {
+    updateMutation.mutate({
+      id: invoice.id,
+      data: {
+        companyId: activeCompanyId!,
+        clientId: clientId ? Number(clientId) : null,
+        invoiceNumber: invoice.invoiceNumber,
+        issueDate,
+        dueDate: dueDate || undefined,
+        taxRate: "21",
+        items,
+      }
+    }, {
+      onSuccess: () => {
+        toast({ title: "Factura actualizada", description: "Los cambios se han guardado correctamente." });
+        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+        onClose();
+      }
+    });
+  };
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title={`Editar Factura ${invoice.invoiceNumber}`} maxWidth="max-w-3xl">
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Cliente</Label>
+            <Select value={clientId} onChange={e => setClientId(e.target.value)}>
+              <option value="">Selecciona un cliente...</option>
+              {clients?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </div>
+          <div>
+            <Label>Número de Factura</Label>
+            <Input value={invoice.invoiceNumber} disabled className="bg-muted" />
+          </div>
+          <div>
+            <Label>Fecha de Emisión</Label>
+            <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+          </div>
+          <div>
+            <Label>Fecha de Vencimiento</Label>
+            <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="border border-border rounded-xl overflow-hidden">
+          <div className="bg-secondary/50 p-3 flex justify-between items-center border-b border-border">
+            <h4 className="font-semibold text-sm">Líneas de Factura</h4>
+            <Button size="sm" variant="outline" onClick={handleAddItem}>Añadir línea</Button>
+          </div>
+          <div className="p-4 space-y-3 bg-card">
+            {items.map((item, index) => (
+              <div key={index} className="flex items-start gap-3">
+                <div className="flex-1">
+                  <Input placeholder="Concepto" value={item.description} onChange={e => updateItem(index, 'description', e.target.value)} />
+                </div>
+                <div className="w-24">
+                  <Input type="number" placeholder="Cant." value={item.quantity} onChange={e => updateItem(index, 'quantity', e.target.value)} />
+                </div>
+                <div className="w-32">
+                  <Input type="number" placeholder="Precio" value={item.unitPrice} onChange={e => updateItem(index, 'unitPrice', e.target.value)} />
+                </div>
+                <Button variant="ghost" size="icon" className="text-destructive flex-shrink-0" onClick={() => handleRemoveItem(index)}>
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+          <div className="bg-muted/30 p-4 border-t border-border flex justify-end">
+            <div className="w-64 space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span> <span>{formatCurrency(subtotal)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">IVA (21%)</span> <span>{formatCurrency(tax)}</span></div>
+              <div className="flex justify-between font-bold text-base pt-2 border-t border-border/50"><span>Total</span> <span>{formatCurrency(total)}</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-4">
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button onClick={handleSubmit} isLoading={updateMutation.isPending}>Guardar Cambios</Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
