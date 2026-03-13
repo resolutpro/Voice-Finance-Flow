@@ -1,9 +1,23 @@
 import { Router, type IRouter } from "express";
-import { db, companiesTable, clientsTable, suppliersTable, projectsTable, categoriesTable, invoicesTable, invoiceItemsTable, vendorInvoicesTable, expensesTable, bankAccountsTable, tasksTable } from "@workspace/db";
+import { db, companiesTable, clientsTable, suppliersTable, projectsTable, categoriesTable, invoicesTable, invoiceItemsTable, vendorInvoicesTable, expensesTable, bankAccountsTable, cashMovementsTable, tasksTable, documentSeriesTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
 router.post("/seed", async (_req, res): Promise<void> => {
+  await db.delete(cashMovementsTable);
+  await db.delete(invoiceItemsTable);
+  await db.delete(invoicesTable);
+  await db.delete(vendorInvoicesTable);
+  await db.delete(expensesTable);
+  await db.delete(tasksTable);
+  await db.delete(documentSeriesTable);
+  await db.delete(projectsTable);
+  await db.delete(categoriesTable);
+  await db.delete(clientsTable);
+  await db.delete(suppliersTable);
+  await db.delete(bankAccountsTable);
+  await db.delete(companiesTable);
+
   const companies = await db.insert(companiesTable).values([
     { name: "Construcciones Rodríguez S.L.", taxId: "B12345678", address: "Calle Mayor 10", city: "Madrid", postalCode: "28001", email: "info@crodriguez.es" },
     { name: "Inmobiliaria Grupo Sur S.A.", taxId: "A87654321", address: "Av. de la Constitución 5", city: "Sevilla", postalCode: "41001", email: "admin@gruposur.es" },
@@ -27,16 +41,16 @@ router.post("/seed", async (_req, res): Promise<void> => {
   ]).returning();
 
   await db.insert(categoriesTable).values([
-    { name: "Material de obra", type: "expense" },
-    { name: "Subcontratas", type: "expense" },
-    { name: "Combustible", type: "expense" },
-    { name: "Seguros", type: "expense" },
-    { name: "Alquiler maquinaria", type: "expense" },
-    { name: "Suministros", type: "expense" },
-    { name: "Servicios profesionales", type: "expense" },
-    { name: "Mantenimiento", type: "income" },
-    { name: "Obra nueva", type: "income" },
-    { name: "Reforma", type: "income" },
+    { companyId: companies[0].id, name: "Material de obra", type: "expense" },
+    { companyId: companies[0].id, name: "Subcontratas", type: "expense" },
+    { companyId: companies[0].id, name: "Combustible", type: "expense" },
+    { companyId: companies[0].id, name: "Seguros", type: "expense" },
+    { companyId: companies[0].id, name: "Alquiler maquinaria", type: "expense" },
+    { companyId: companies[1].id, name: "Suministros", type: "expense" },
+    { companyId: companies[1].id, name: "Servicios profesionales", type: "expense" },
+    { companyId: companies[2].id, name: "Mantenimiento", type: "income" },
+    { companyId: companies[0].id, name: "Obra nueva", type: "income" },
+    { companyId: companies[0].id, name: "Reforma", type: "income" },
   ]);
 
   const projects = await db.insert(projectsTable).values([
@@ -70,6 +84,13 @@ router.post("/seed", async (_req, res): Promise<void> => {
     { invoiceId: invoices[4].id, description: "Mantenimiento preventivo marzo", quantity: "1", unitPrice: "3200.00", amount: "3200.00", sortOrder: 0 },
     { invoiceId: invoices[5].id, description: "Certificación obra tramo 3 - fase 1", quantity: "1", unitPrice: "250000.00", amount: "250000.00", sortOrder: 0 },
     { invoiceId: invoices[6].id, description: "Acabados interiores lote 6", quantity: "1", unitPrice: "12000.00", amount: "12000.00", sortOrder: 0 },
+  ]);
+
+  await db.insert(documentSeriesTable).values([
+    { companyId: companies[0].id, type: "invoice", prefix: "2026-", nextNumber: 5, year: 2026 },
+    { companyId: companies[1].id, type: "invoice", prefix: "2026-", nextNumber: 2, year: 2026 },
+    { companyId: companies[2].id, type: "invoice", prefix: "2026-", nextNumber: 2, year: 2026 },
+    { companyId: companies[3].id, type: "invoice", prefix: "2026-", nextNumber: 2, year: 2026 },
   ]);
 
   await db.insert(vendorInvoicesTable).values([

@@ -305,6 +305,7 @@ export const ListCategoriesResponseItem = zod.object({
 export const ListCategoriesResponse = zod.array(ListCategoriesResponseItem);
 
 export const CreateCategoryBody = zod.object({
+  companyId: zod.number().nullish(),
   name: zod.string(),
   type: zod.string(),
   parentId: zod.number().nullish(),

@@ -197,6 +197,8 @@ export interface Category {
 }
 
 export interface CategoryInput {
+  /** @nullable */
+  companyId?: number | null;
   name: string;
   type: string;
   /** @nullable */

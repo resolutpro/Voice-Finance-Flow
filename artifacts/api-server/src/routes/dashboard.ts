@@ -1,11 +1,22 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, lte, gte, and, ne } from "drizzle-orm";
-import { db, invoicesTable, vendorInvoicesTable, expensesTable, bankAccountsTable, companiesTable, tasksTable, clientsTable, invoiceItemsTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
+import { db, invoicesTable, vendorInvoicesTable, expensesTable, bankAccountsTable, companiesTable, tasksTable, clientsTable } from "@workspace/db";
+import { GetDashboardQueryParams } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
+interface DueItem {
+  type: string;
+  id: number;
+  description: string;
+  amount: string;
+  dueDate: string;
+}
+
 router.get("/dashboard", async (req, res): Promise<void> => {
-  const companyId = req.query.companyId ? parseInt(req.query.companyId as string, 10) : undefined;
+  const query = GetDashboardQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  const companyId = query.data.companyId;
 
   const accounts = companyId
     ? await db.select().from(bankAccountsTable).where(eq(bankAccountsTable.companyId, companyId))
@@ -46,7 +57,7 @@ router.get("/dashboard", async (req, res): Promise<void> => {
   weekEnd.setDate(weekEnd.getDate() + 7);
   const weekEndStr = weekEnd.toISOString().split("T")[0];
 
-  const thisWeekDue: any[] = [];
+  const thisWeekDue: DueItem[] = [];
   allInvoices.filter(inv => inv.status !== "paid" && inv.dueDate && inv.dueDate >= today && inv.dueDate <= weekEndStr).forEach(inv => {
     thisWeekDue.push({ type: "receivable", id: inv.id, description: `Factura ${inv.invoiceNumber}`, amount: (parseFloat(inv.total) - parseFloat(inv.paidAmount)).toString(), dueDate: inv.dueDate! });
   });
@@ -55,7 +66,7 @@ router.get("/dashboard", async (req, res): Promise<void> => {
   });
 
   const recentInvoices = allInvoices.slice(0, 5).map(inv => ({
-    ...inv, items: [], clientName: null, companyName: null
+    ...inv, items: [] as { id: number; description: string; quantity: string; unitPrice: string; amount: string; sortOrder: number }[], clientName: null as string | null, companyName: null as string | null
   }));
 
   for (const inv of recentInvoices) {

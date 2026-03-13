@@ -1,25 +1,26 @@
 import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import { db, cashMovementsTable, bankAccountsTable } from "@workspace/db";
+import { ListCashMovementsQueryParams, CreateCashMovementBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
 router.get("/cash-movements", async (req, res): Promise<void> => {
-  const bankAccountId = req.query.bankAccountId ? parseInt(req.query.bankAccountId as string, 10) : undefined;
-  const companyId = req.query.companyId ? parseInt(req.query.companyId as string, 10) : undefined;
+  const query = ListCashMovementsQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
 
   let movements;
-  if (bankAccountId) {
-    movements = await db.select().from(cashMovementsTable).where(eq(cashMovementsTable.bankAccountId, bankAccountId)).orderBy(desc(cashMovementsTable.movementDate));
-  } else if (companyId) {
-    const accounts = await db.select({ id: bankAccountsTable.id }).from(bankAccountsTable).where(eq(bankAccountsTable.companyId, companyId));
+  if (query.data.bankAccountId) {
+    movements = await db.select().from(cashMovementsTable).where(eq(cashMovementsTable.bankAccountId, query.data.bankAccountId)).orderBy(desc(cashMovementsTable.movementDate));
+  } else if (query.data.companyId) {
+    const accounts = await db.select({ id: bankAccountsTable.id }).from(bankAccountsTable).where(eq(bankAccountsTable.companyId, query.data.companyId));
     const accountIds = accounts.map(a => a.id);
     if (accountIds.length === 0) {
       res.json([]);
       return;
     }
-    movements = await db.select().from(cashMovementsTable).orderBy(desc(cashMovementsTable.movementDate));
-    movements = movements.filter(m => accountIds.includes(m.bankAccountId));
+    const allMovements = await db.select().from(cashMovementsTable).orderBy(desc(cashMovementsTable.movementDate));
+    movements = allMovements.filter(m => accountIds.includes(m.bankAccountId));
   } else {
     movements = await db.select().from(cashMovementsTable).orderBy(desc(cashMovementsTable.movementDate));
   }
@@ -33,7 +34,10 @@ router.get("/cash-movements", async (req, res): Promise<void> => {
 });
 
 router.post("/cash-movements", async (req, res): Promise<void> => {
-  const data = req.body;
+  const parsed = CreateCashMovementBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const data = parsed.data;
   const [movement] = await db.insert(cashMovementsTable).values(data).returning();
 
   const amount = parseFloat(data.amount);

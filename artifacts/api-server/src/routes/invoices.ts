@@ -1,8 +1,24 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, sql, and, like } from "drizzle-orm";
-import { db, invoicesTable, invoiceItemsTable, clientsTable, companiesTable, bankAccountsTable, cashMovementsTable } from "@workspace/db";
+import { eq, desc, and, like } from "drizzle-orm";
+import { db, invoicesTable, invoiceItemsTable, clientsTable, companiesTable, bankAccountsTable, cashMovementsTable, documentSeriesTable } from "@workspace/db";
+import {
+  ListInvoicesQueryParams, CreateInvoiceBody, GetInvoiceParams,
+  UpdateInvoiceParams, UpdateInvoiceBody, DeleteInvoiceParams,
+  UpdateInvoiceStatusParams, UpdateInvoiceStatusBody,
+  GetNextInvoiceNumberQueryParams,
+  RegisterInvoicePaymentParams, RegisterInvoicePaymentBody,
+} from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+interface ProcessedItem {
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  amount: string;
+  sortOrder: number;
+  invoiceId?: number;
+}
 
 async function getInvoiceWithItems(invoiceId: number) {
   const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, invoiceId));
@@ -21,29 +37,44 @@ async function getInvoiceWithItems(invoiceId: number) {
   return { ...invoice, items, clientName, companyName: company?.name ?? null };
 }
 
-router.get("/invoices/next-number", async (req, res): Promise<void> => {
-  const companyId = parseInt(req.query.companyId as string, 10);
+async function getNextInvoiceNumber(companyId: number): Promise<string> {
   const year = new Date().getFullYear();
+  const [series] = await db.select().from(documentSeriesTable)
+    .where(and(eq(documentSeriesTable.companyId, companyId), eq(documentSeriesTable.type, "invoice"), eq(documentSeriesTable.year, year)));
+
+  if (series) {
+    const num = series.nextNumber.toString().padStart(3, "0");
+    await db.update(documentSeriesTable).set({ nextNumber: series.nextNumber + 1 }).where(eq(documentSeriesTable.id, series.id));
+    return `${series.prefix}${num}`;
+  }
+
   const prefix = `${year}-`;
+  const [newSeries] = await db.insert(documentSeriesTable).values({
+    companyId,
+    type: "invoice",
+    prefix,
+    nextNumber: 2,
+    year,
+  }).returning();
 
-  const [result] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(invoicesTable)
-    .where(and(eq(invoicesTable.companyId, companyId), like(invoicesTable.invoiceNumber, `${prefix}%`)));
+  return `${prefix}001`;
+}
 
-  const nextNum = (Number(result?.count ?? 0) + 1).toString().padStart(3, "0");
-  res.json({ invoiceNumber: `${prefix}${nextNum}` });
+router.get("/invoices/next-number", async (req, res): Promise<void> => {
+  const query = GetNextInvoiceNumberQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  const invoiceNumber = await getNextInvoiceNumber(query.data.companyId);
+  res.json({ invoiceNumber });
 });
 
 router.get("/invoices", async (req, res): Promise<void> => {
-  const companyId = req.query.companyId ? parseInt(req.query.companyId as string, 10) : undefined;
-  const status = req.query.status as string | undefined;
-  const clientId = req.query.clientId ? parseInt(req.query.clientId as string, 10) : undefined;
+  const query = ListInvoicesQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
 
   const conditions = [];
-  if (companyId) conditions.push(eq(invoicesTable.companyId, companyId));
-  if (status) conditions.push(eq(invoicesTable.status, status));
-  if (clientId) conditions.push(eq(invoicesTable.clientId, clientId));
+  if (query.data.companyId) conditions.push(eq(invoicesTable.companyId, query.data.companyId));
+  if (query.data.status) conditions.push(eq(invoicesTable.status, query.data.status));
+  if (query.data.clientId) conditions.push(eq(invoicesTable.clientId, query.data.clientId));
 
   const invoices = await db
     .select()
@@ -66,31 +97,45 @@ router.get("/invoices", async (req, res): Promise<void> => {
 });
 
 router.post("/invoices", async (req, res): Promise<void> => {
-  const { items, ...invoiceData } = req.body;
+  const parsed = CreateInvoiceBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const { items, ...invoiceData } = parsed.data;
   let subtotal = 0;
-  const processedItems = (items || []).map((item: any, idx: number) => {
+  const processedItems: ProcessedItem[] = (items || []).map((item: { description: string; quantity: string; unitPrice: string }, idx: number) => {
     const qty = parseFloat(item.quantity || "1");
     const price = parseFloat(item.unitPrice || "0");
     const amount = qty * price;
     subtotal += amount;
-    return { ...item, quantity: qty.toString(), unitPrice: price.toString(), amount: amount.toString(), sortOrder: idx };
+    return { description: item.description, quantity: qty.toString(), unitPrice: price.toString(), amount: amount.toString(), sortOrder: idx };
   });
 
   const taxRate = parseFloat(invoiceData.taxRate || "21");
   const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
 
+  let invoiceNumber = invoiceData.invoiceNumber;
+  if (!invoiceNumber || invoiceNumber === "") {
+    invoiceNumber = await getNextInvoiceNumber(invoiceData.companyId);
+  }
+
   const [invoice] = await db.insert(invoicesTable).values({
-    ...invoiceData,
+    companyId: invoiceData.companyId,
+    clientId: invoiceData.clientId ?? null,
+    projectId: invoiceData.projectId ?? null,
+    invoiceNumber,
+    status: invoiceData.status || "draft",
+    issueDate: invoiceData.issueDate,
+    dueDate: invoiceData.dueDate ?? null,
+    notes: invoiceData.notes ?? null,
     subtotal: subtotal.toString(),
     taxRate: taxRate.toString(),
     taxAmount: taxAmount.toString(),
     total: total.toString(),
-    status: invoiceData.status || "draft",
   }).returning();
 
   if (processedItems.length > 0) {
-    await db.insert(invoiceItemsTable).values(processedItems.map((item: any) => ({
+    await db.insert(invoiceItemsTable).values(processedItems.map((item) => ({
       ...item,
       invoiceId: invoice.id,
     })));
@@ -101,28 +146,31 @@ router.post("/invoices", async (req, res): Promise<void> => {
 });
 
 router.get("/invoices/:id", async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  const result = await getInvoiceWithItems(id);
+  const params = GetInvoiceParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const result = await getInvoiceWithItems(params.data.id);
   if (!result) { res.status(404).json({ error: "Not found" }); return; }
   res.json(result);
 });
 
 router.patch("/invoices/:id", async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  const { items, ...invoiceData } = req.body;
+  const params = UpdateInvoiceParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = UpdateInvoiceBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const { items, ...invoiceData } = body.data;
 
   if (items) {
-    await db.delete(invoiceItemsTable).where(eq(invoiceItemsTable.invoiceId, id));
+    await db.delete(invoiceItemsTable).where(eq(invoiceItemsTable.invoiceId, params.data.id));
 
     let subtotal = 0;
-    const processedItems = items.map((item: any, idx: number) => {
+    const processedItems: ProcessedItem[] = items.map((item: { description: string; quantity: string; unitPrice: string }, idx: number) => {
       const qty = parseFloat(item.quantity || "1");
       const price = parseFloat(item.unitPrice || "0");
       const amount = qty * price;
       subtotal += amount;
-      return { ...item, invoiceId: id, quantity: qty.toString(), unitPrice: price.toString(), amount: amount.toString(), sortOrder: idx };
+      return { description: item.description, invoiceId: params.data.id, quantity: qty.toString(), unitPrice: price.toString(), amount: amount.toString(), sortOrder: idx };
     });
 
     const taxRate = parseFloat(invoiceData.taxRate || "21");
@@ -135,68 +183,72 @@ router.patch("/invoices/:id", async (req, res): Promise<void> => {
       taxRate: taxRate.toString(),
       taxAmount: taxAmount.toString(),
       total: total.toString(),
-    }).where(eq(invoicesTable.id, id));
+    }).where(eq(invoicesTable.id, params.data.id));
 
     if (processedItems.length > 0) {
       await db.insert(invoiceItemsTable).values(processedItems);
     }
   } else {
-    await db.update(invoicesTable).set(invoiceData).where(eq(invoicesTable.id, id));
+    await db.update(invoicesTable).set(invoiceData).where(eq(invoicesTable.id, params.data.id));
   }
 
-  const result = await getInvoiceWithItems(id);
+  const result = await getInvoiceWithItems(params.data.id);
   if (!result) { res.status(404).json({ error: "Not found" }); return; }
   res.json(result);
 });
 
 router.delete("/invoices/:id", async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  await db.delete(invoiceItemsTable).where(eq(invoiceItemsTable.invoiceId, id));
-  await db.delete(invoicesTable).where(eq(invoicesTable.id, id));
+  const params = DeleteInvoiceParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  await db.delete(invoiceItemsTable).where(eq(invoiceItemsTable.invoiceId, params.data.id));
+  await db.delete(invoicesTable).where(eq(invoicesTable.id, params.data.id));
   res.json({ success: true });
 });
 
 router.patch("/invoices/:id/status", async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  await db.update(invoicesTable).set({ status: req.body.status }).where(eq(invoicesTable.id, id));
-  const result = await getInvoiceWithItems(id);
+  const params = UpdateInvoiceStatusParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = UpdateInvoiceStatusBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  await db.update(invoicesTable).set({ status: body.data.status }).where(eq(invoicesTable.id, params.data.id));
+  const result = await getInvoiceWithItems(params.data.id);
   if (!result) { res.status(404).json({ error: "Not found" }); return; }
   res.json(result);
 });
 
 router.post("/invoices/:id/payment", async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  const { amount, bankAccountId, date } = req.body;
-  const paymentAmount = parseFloat(amount);
+  const params = RegisterInvoicePaymentParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = RegisterInvoicePaymentBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
-  const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  const paymentAmount = parseFloat(body.data.amount);
+
+  const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, params.data.id));
   if (!invoice) { res.status(404).json({ error: "Not found" }); return; }
 
   const newPaid = parseFloat(invoice.paidAmount) + paymentAmount;
   const total = parseFloat(invoice.total);
   const newStatus = newPaid >= total ? "paid" : "partially_paid";
 
-  await db.update(invoicesTable).set({ paidAmount: newPaid.toString(), status: newStatus }).where(eq(invoicesTable.id, id));
+  await db.update(invoicesTable).set({ paidAmount: newPaid.toString(), status: newStatus }).where(eq(invoicesTable.id, params.data.id));
 
   await db.insert(cashMovementsTable).values({
-    bankAccountId,
+    bankAccountId: body.data.bankAccountId,
     type: "income",
     amount: paymentAmount.toString(),
     description: `Cobro factura ${invoice.invoiceNumber}`,
-    movementDate: date || new Date().toISOString().split("T")[0],
-    invoiceId: id,
+    movementDate: body.data.date || new Date().toISOString().split("T")[0],
+    invoiceId: params.data.id,
   });
 
-  const [account] = await db.select().from(bankAccountsTable).where(eq(bankAccountsTable.id, bankAccountId));
+  const [account] = await db.select().from(bankAccountsTable).where(eq(bankAccountsTable.id, body.data.bankAccountId));
   if (account) {
     const newBalance = parseFloat(account.currentBalance) + paymentAmount;
-    await db.update(bankAccountsTable).set({ currentBalance: newBalance.toString() }).where(eq(bankAccountsTable.id, bankAccountId));
+    await db.update(bankAccountsTable).set({ currentBalance: newBalance.toString() }).where(eq(bankAccountsTable.id, body.data.bankAccountId));
   }
 
-  const result = await getInvoiceWithItems(id);
+  const result = await getInvoiceWithItems(params.data.id);
   res.json(result);
 });
 

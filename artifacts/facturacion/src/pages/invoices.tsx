@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListInvoices, useCreateInvoice, useListClients } from "@workspace/api-client-react";
+import { useListInvoices, useCreateInvoice, useListClients, useGetNextInvoiceNumber } from "@workspace/api-client-react";
 import { useCompany } from "@/hooks/use-company";
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Modal, Input, Label, Select } from "@/components/shared-ui";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -94,10 +94,11 @@ function CreateInvoiceModal({ isOpen, onClose, companyId }: { isOpen: boolean, o
   const { toast } = useToast();
   const createMutation = useCreateInvoice();
   const { data: clients } = useListClients({ companyId });
+  const { data: nextNumberData } = useGetNextInvoiceNumber({ companyId });
 
-  // Form state
   const [clientId, setClientId] = useState("");
-  const [invoiceNumber, setInvoiceNumber] = useState("FAC-2026-001");
+  const autoInvoiceNumber = nextNumberData?.invoiceNumber || "";
+  const [invoiceNumberOverride, setInvoiceNumberOverride] = useState("");
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
   const [items, setItems] = useState([{ description: "", quantity: "1", unitPrice: "0" }]);
 
@@ -119,7 +120,7 @@ function CreateInvoiceModal({ isOpen, onClose, companyId }: { isOpen: boolean, o
       data: {
         companyId,
         clientId: clientId ? Number(clientId) : null,
-        invoiceNumber,
+        invoiceNumber: invoiceNumberOverride || "",
         issueDate,
         taxRate: "21",
         items
@@ -146,7 +147,7 @@ function CreateInvoiceModal({ isOpen, onClose, companyId }: { isOpen: boolean, o
           </div>
           <div>
             <Label>Número de Factura</Label>
-            <Input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} />
+            <Input value={invoiceNumberOverride} onChange={e => setInvoiceNumberOverride(e.target.value)} placeholder={autoInvoiceNumber ? `Auto: ${autoInvoiceNumber}` : "Auto"} />
           </div>
           <div>
             <Label>Fecha de Emisión</Label>

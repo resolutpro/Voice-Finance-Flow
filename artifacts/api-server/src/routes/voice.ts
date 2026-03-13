@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { db, clientsTable, suppliersTable, companiesTable } from "@workspace/db";
+import { db, clientsTable, suppliersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { ParseVoiceCommandBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -29,13 +30,12 @@ function parseDate(text: string): string | null {
     today.setDate(today.getDate() + 1);
     return today.toISOString().split("T")[0];
   }
-  if (/lunes/i.test(text)) return getNextDayOfWeek(1);
-  if (/martes/i.test(text)) return getNextDayOfWeek(2);
-  if (/miércoles|miercoles/i.test(text)) return getNextDayOfWeek(3);
-  if (/jueves/i.test(text)) return getNextDayOfWeek(4);
-  if (/viernes/i.test(text)) return getNextDayOfWeek(5);
-  if (/sábado|sabado/i.test(text)) return getNextDayOfWeek(6);
-  if (/domingo/i.test(text)) return getNextDayOfWeek(0);
+  const dayMap: Record<string, number> = { lunes: 1, martes: 2, "miércoles": 3, miercoles: 3, jueves: 4, viernes: 5, "sábado": 6, sabado: 6, domingo: 0 };
+  for (const [name, day] of Object.entries(dayMap)) {
+    if (new RegExp(name, "i").test(text)) {
+      return getNextDayOfWeek(day);
+    }
+  }
   return null;
 }
 
@@ -66,16 +66,11 @@ async function findClientByName(name: string, companyId?: number) {
   return clients.find(c => c.name.toLowerCase().includes(lower));
 }
 
-async function findSupplierByName(name: string, companyId?: number) {
-  const suppliers = companyId
-    ? await db.select().from(suppliersTable).where(eq(suppliersTable.companyId, companyId))
-    : await db.select().from(suppliersTable);
-  const lower = name.toLowerCase();
-  return suppliers.find(s => s.name.toLowerCase().includes(lower));
-}
-
 router.post("/voice/parse", async (req, res): Promise<void> => {
-  const { text, companyId } = req.body;
+  const parsed = ParseVoiceCommandBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const { text, companyId } = parsed.data;
   const lowerText = text.toLowerCase();
 
   if (/crear\s+factura|nueva\s+factura|factura\s+para/i.test(lowerText)) {
@@ -100,6 +95,7 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
         type: "invoice",
         clientId,
         clientName,
+        companyId,
         items: concept ? [{ description: concept, quantity: "1", unitPrice: amount?.toString() || "" }] : [],
         taxRate: hasIva ? "21" : "0",
         issueDate: new Date().toISOString().split("T")[0],
@@ -114,14 +110,13 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
     const descMatch = lowerText.match(/gasto\s+(?:de\s+)?(?:\d+[\.,]?\d*\s*(?:euros?|€)\s+)?(?:de\s+)?(.+?)(?:\s+(?:para|de|por)\s+|$)/i);
     const description = descMatch ? descMatch[1].trim() : extractConcept(text);
 
-    const companyMatch = lowerText.match(/(?:para|empresa)\s+([a-záéíóúñü\s]+?)$/i);
-
     res.json({
       intent: "create_expense",
       confidence: amount ? 0.85 : 0.6,
-      entities: { amount, description, companyName: companyMatch?.[1]?.trim() },
+      entities: { amount, description, companyId },
       preview: {
         type: "expense",
+        companyId,
         description: description || "",
         amount: amount?.toString() || "",
         taxRate: "21",
@@ -140,9 +135,10 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
     res.json({
       intent: "create_task",
       confidence: 0.85,
-      entities: { title, dueDate },
+      entities: { title, dueDate, companyId },
       preview: {
         type: "task",
+        companyId,
         title,
         dueDate,
         status: "pending",

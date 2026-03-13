@@ -1,29 +1,34 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, clientsTable } from "@workspace/db";
+import { ListClientsQueryParams, CreateClientBody, UpdateClientParams, UpdateClientBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
 router.get("/clients", async (req, res): Promise<void> => {
-  const companyId = req.query.companyId ? parseInt(req.query.companyId as string, 10) : undefined;
-  let query = db.select().from(clientsTable).orderBy(clientsTable.name);
-  if (companyId) {
-    const results = await db.select().from(clientsTable).where(eq(clientsTable.companyId, companyId)).orderBy(clientsTable.name);
+  const query = ListClientsQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  if (query.data.companyId) {
+    const results = await db.select().from(clientsTable).where(eq(clientsTable.companyId, query.data.companyId)).orderBy(clientsTable.name);
     res.json(results);
     return;
   }
-  res.json(await query);
+  res.json(await db.select().from(clientsTable).orderBy(clientsTable.name));
 });
 
 router.post("/clients", async (req, res): Promise<void> => {
-  const [client] = await db.insert(clientsTable).values(req.body).returning();
+  const parsed = CreateClientBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [client] = await db.insert(clientsTable).values(parsed.data).returning();
   res.status(201).json(client);
 });
 
 router.patch("/clients/:id", async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  const [client] = await db.update(clientsTable).set(req.body).where(eq(clientsTable.id, id)).returning();
+  const params = UpdateClientParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = UpdateClientBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [client] = await db.update(clientsTable).set(body.data).where(eq(clientsTable.id, params.data.id)).returning();
   if (!client) { res.status(404).json({ error: "Not found" }); return; }
   res.json(client);
 });

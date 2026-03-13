@@ -1,9 +1,11 @@
 import { pgTable, serial, text, timestamp, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { companiesTable } from "./companies";
 
 export const categoriesTable = pgTable("categories", {
   id: serial("id").primaryKey(),
+  companyId: integer("company_id").references(() => companiesTable.id),
   name: text("name").notNull(),
   type: text("type").notNull().default("expense"),
   parentId: integer("parent_id"),

@@ -65,7 +65,15 @@ export default function TasksPage() {
   );
 }
 
-function TaskCard({ task }: { task: any }) {
+interface TaskItem {
+  id: number;
+  title: string;
+  description?: string | null;
+  priority?: string | null;
+  status: string;
+}
+
+function TaskCard({ task }: { task: TaskItem }) {
   return (
     <Card className="cursor-pointer hover:border-primary/50 hover:shadow-md transition-all active:scale-[0.98]">
       <CardContent className="p-4">

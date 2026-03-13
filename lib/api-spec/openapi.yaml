@@ -1185,6 +1185,8 @@ components:
     CategoryInput:
       type: object
       properties:
+        companyId:
+          type: ["integer", "null"]
         name:
           type: string
         type:

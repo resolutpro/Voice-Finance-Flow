@@ -1,12 +1,21 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, invoicesTable, vendorInvoicesTable, expensesTable, bankAccountsTable } from "@workspace/db";
+import { GetCashForecastQueryParams } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
+interface ForecastAlert {
+  type: string;
+  message: string;
+  weekStart: string;
+}
+
 router.get("/cash-forecast", async (req, res): Promise<void> => {
-  const companyId = req.query.companyId ? parseInt(req.query.companyId as string, 10) : undefined;
-  const weeksCount = req.query.weeks ? parseInt(req.query.weeks as string, 10) : 8;
+  const query = GetCashForecastQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  const companyId = query.data.companyId;
+  const weeksCount = query.data.weeks ?? 8;
 
   const accounts = companyId
     ? await db.select().from(bankAccountsTable).where(eq(bankAccountsTable.companyId, companyId))
@@ -69,7 +78,7 @@ router.get("/cash-forecast", async (req, res): Promise<void> => {
     });
   }
 
-  const alerts: any[] = [];
+  const alerts: ForecastAlert[] = [];
   weeks.forEach(week => {
     const balance = parseFloat(week.projectedBalance);
     if (balance < 0) {

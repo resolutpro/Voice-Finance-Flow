@@ -1,16 +1,21 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and } from "drizzle-orm";
 import { db, vendorInvoicesTable, suppliersTable, categoriesTable, bankAccountsTable, cashMovementsTable } from "@workspace/db";
+import {
+  ListVendorInvoicesQueryParams, CreateVendorInvoiceBody,
+  UpdateVendorInvoiceParams, UpdateVendorInvoiceBody,
+  RegisterVendorPaymentParams, RegisterVendorPaymentBody,
+} from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
 router.get("/vendor-invoices", async (req, res): Promise<void> => {
-  const companyId = req.query.companyId ? parseInt(req.query.companyId as string, 10) : undefined;
-  const status = req.query.status as string | undefined;
+  const query = ListVendorInvoicesQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
 
   const conditions = [];
-  if (companyId) conditions.push(eq(vendorInvoicesTable.companyId, companyId));
-  if (status) conditions.push(eq(vendorInvoicesTable.status, status));
+  if (query.data.companyId) conditions.push(eq(vendorInvoicesTable.companyId, query.data.companyId));
+  if (query.data.status) conditions.push(eq(vendorInvoicesTable.status, query.data.status));
 
   const invoices = await db
     .select()
@@ -36,74 +41,89 @@ router.get("/vendor-invoices", async (req, res): Promise<void> => {
 });
 
 router.post("/vendor-invoices", async (req, res): Promise<void> => {
-  const data = req.body;
+  const parsed = CreateVendorInvoiceBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const data = parsed.data;
   const subtotal = parseFloat(data.subtotal || "0");
   const taxRate = parseFloat(data.taxRate || "21");
   const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
 
   const [invoice] = await db.insert(vendorInvoicesTable).values({
-    ...data,
+    companyId: data.companyId,
+    supplierId: data.supplierId ?? null,
+    categoryId: data.categoryId ?? null,
+    invoiceNumber: data.invoiceNumber ?? null,
+    status: data.status || "pending",
+    issueDate: data.issueDate,
+    dueDate: data.dueDate ?? null,
+    description: data.description ?? null,
+    notes: data.notes ?? null,
     subtotal: subtotal.toString(),
     taxRate: taxRate.toString(),
     taxAmount: taxAmount.toString(),
     total: total.toString(),
-    status: data.status || "pending",
   }).returning();
 
   res.status(201).json({ ...invoice, supplierName: null, categoryName: null });
 });
 
 router.patch("/vendor-invoices/:id", async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  const data = req.body;
+  const params = UpdateVendorInvoiceParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = UpdateVendorInvoiceBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const data = body.data;
+  const updateData: Record<string, unknown> = { ...data };
 
   if (data.subtotal) {
     const subtotal = parseFloat(data.subtotal);
     const taxRate = parseFloat(data.taxRate || "21");
     const taxAmount = subtotal * (taxRate / 100);
-    const total = subtotal + taxAmount;
-    data.taxAmount = taxAmount.toString();
-    data.total = total.toString();
+    updateData.taxAmount = taxAmount.toString();
+    updateData.total = (subtotal + taxAmount).toString();
   }
 
-  const [invoice] = await db.update(vendorInvoicesTable).set(data).where(eq(vendorInvoicesTable.id, id)).returning();
+  const [invoice] = await db.update(vendorInvoicesTable).set(updateData).where(eq(vendorInvoicesTable.id, params.data.id)).returning();
   if (!invoice) { res.status(404).json({ error: "Not found" }); return; }
   res.json({ ...invoice, supplierName: null, categoryName: null });
 });
 
 router.post("/vendor-invoices/:id/payment", async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  const { amount, bankAccountId, date } = req.body;
-  const paymentAmount = parseFloat(amount);
+  const params = RegisterVendorPaymentParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = RegisterVendorPaymentBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
-  const [invoice] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  const paymentAmount = parseFloat(body.data.amount);
+
+  const [invoice] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, params.data.id));
   if (!invoice) { res.status(404).json({ error: "Not found" }); return; }
 
   const newPaid = parseFloat(invoice.paidAmount) + paymentAmount;
   const total = parseFloat(invoice.total);
   const newStatus = newPaid >= total ? "paid" : "partially_paid";
 
-  await db.update(vendorInvoicesTable).set({ paidAmount: newPaid.toString(), status: newStatus }).where(eq(vendorInvoicesTable.id, id));
+  await db.update(vendorInvoicesTable).set({ paidAmount: newPaid.toString(), status: newStatus }).where(eq(vendorInvoicesTable.id, params.data.id));
 
   await db.insert(cashMovementsTable).values({
-    bankAccountId,
+    bankAccountId: body.data.bankAccountId,
     type: "expense",
     amount: (-paymentAmount).toString(),
     description: `Pago factura ${invoice.invoiceNumber || "proveedor"}`,
-    movementDate: date || new Date().toISOString().split("T")[0],
-    vendorInvoiceId: id,
+    movementDate: body.data.date || new Date().toISOString().split("T")[0],
+    vendorInvoiceId: params.data.id,
   });
 
-  const [account] = await db.select().from(bankAccountsTable).where(eq(bankAccountsTable.id, bankAccountId));
+  const [account] = await db.select().from(bankAccountsTable).where(eq(bankAccountsTable.id, body.data.bankAccountId));
   if (account) {
     const newBalance = parseFloat(account.currentBalance) - paymentAmount;
-    await db.update(bankAccountsTable).set({ currentBalance: newBalance.toString() }).where(eq(bankAccountsTable.id, bankAccountId));
+    await db.update(bankAccountsTable).set({ currentBalance: newBalance.toString() }).where(eq(bankAccountsTable.id, body.data.bankAccountId));
   }
 
-  const [updated] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  const [updated] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, params.data.id));
   res.json({ ...updated, supplierName: null, categoryName: null });
 });
 
