@@ -9,3 +9,4 @@ export * from "./bank-accounts";
 export * from "./cash-movements";
 export * from "./tasks";
 export * from "./document-series";
+export * from "./users";

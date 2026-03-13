@@ -127,13 +127,14 @@ export function VoiceAssistant() {
         setVoiceMessage(res.message || "");
 
         if (res.preview && res.preview.type === "navigation" && res.preview.path) {
-          setLocation(res.preview.path);
+          setLocation(String(res.preview.path));
           toast({ title: "Navegando", description: res.message });
           return;
         }
 
         if (res.preview) {
-          setEditablePreview(res.preview as VoicePreview);
+          const preview = res.preview as unknown as VoicePreview;
+          setEditablePreview(preview);
           setShowPreview(true);
         } else {
           toast({ title: "Comando recibido", description: res.message });

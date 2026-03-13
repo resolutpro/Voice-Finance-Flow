@@ -17,7 +17,10 @@ interface ProcessedItem {
   unitPrice: string;
   amount: string;
   sortOrder: number;
-  invoiceId?: number;
+}
+
+interface ProcessedItemWithInvoice extends ProcessedItem {
+  invoiceId: number;
 }
 
 async function getInvoiceWithItems(invoiceId: number) {
@@ -165,7 +168,7 @@ router.patch("/invoices/:id", async (req, res): Promise<void> => {
     await db.delete(invoiceItemsTable).where(eq(invoiceItemsTable.invoiceId, params.data.id));
 
     let subtotal = 0;
-    const processedItems: ProcessedItem[] = items.map((item: { description: string; quantity: string; unitPrice: string }, idx: number) => {
+    const processedItems: ProcessedItemWithInvoice[] = items.map((item: { description: string; quantity: string; unitPrice: string }, idx: number) => {
       const qty = parseFloat(item.quantity || "1");
       const price = parseFloat(item.unitPrice || "0");
       const amount = qty * price;
