@@ -38,16 +38,20 @@ router.post("/cash-movements", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const data = parsed.data;
-  const [movement] = await db.insert(cashMovementsTable).values(data).returning();
-
-  const amount = parseFloat(data.amount);
   const [account] = await db.select().from(bankAccountsTable).where(eq(bankAccountsTable.id, data.bankAccountId));
-  if (account) {
-    const newBalance = parseFloat(account.currentBalance) + amount;
-    await db.update(bankAccountsTable).set({ currentBalance: newBalance.toString() }).where(eq(bankAccountsTable.id, data.bankAccountId));
-  }
+  if (!account) { res.status(400).json({ error: "Cuenta bancaria no encontrada" }); return; }
 
-  res.status(201).json({ ...movement, bankAccountName: null });
+  let movement: typeof cashMovementsTable.$inferSelect;
+  await db.transaction(async (tx) => {
+    const [m] = await tx.insert(cashMovementsTable).values(data).returning();
+    movement = m;
+
+    const amount = parseFloat(data.amount);
+    const newBalance = parseFloat(account.currentBalance) + amount;
+    await tx.update(bankAccountsTable).set({ currentBalance: newBalance.toString() }).where(eq(bankAccountsTable.id, data.bankAccountId));
+  });
+
+  res.status(201).json({ ...movement!, bankAccountName: account.name });
 });
 
 export default router;

@@ -253,26 +253,32 @@ router.post("/invoices/:id/payment", async (req, res): Promise<void> => {
   const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, params.data.id));
   if (!invoice) { res.status(404).json({ error: "Not found" }); return; }
 
-  const newPaid = parseFloat(invoice.paidAmount) + paymentAmount;
-  const total = parseFloat(invoice.total);
-  const newStatus = newPaid >= total ? "paid" : "partially_paid";
-
-  await db.update(invoicesTable).set({ paidAmount: newPaid.toString(), status: newStatus }).where(eq(invoicesTable.id, params.data.id));
-
-  await db.insert(cashMovementsTable).values({
-    bankAccountId: body.data.bankAccountId,
-    type: "income",
-    amount: paymentAmount.toString(),
-    description: `Cobro factura ${invoice.invoiceNumber}`,
-    movementDate: body.data.date || new Date().toISOString().split("T")[0],
-    invoiceId: params.data.id,
-  });
-
   const [account] = await db.select().from(bankAccountsTable).where(eq(bankAccountsTable.id, body.data.bankAccountId));
-  if (account) {
-    const newBalance = parseFloat(account.currentBalance) + paymentAmount;
-    await db.update(bankAccountsTable).set({ currentBalance: newBalance.toString() }).where(eq(bankAccountsTable.id, body.data.bankAccountId));
+  if (!account) { res.status(400).json({ error: "Cuenta bancaria no encontrada" }); return; }
+  if (account.companyId !== invoice.companyId) {
+    res.status(400).json({ error: "La cuenta bancaria debe pertenecer a la misma empresa que la factura" });
+    return;
   }
+
+  await db.transaction(async (tx) => {
+    const newPaid = parseFloat(invoice.paidAmount) + paymentAmount;
+    const total = parseFloat(invoice.total);
+    const newStatus = newPaid >= total ? "paid" : "partially_paid";
+
+    await tx.update(invoicesTable).set({ paidAmount: newPaid.toString(), status: newStatus }).where(eq(invoicesTable.id, params.data.id));
+
+    await tx.insert(cashMovementsTable).values({
+      bankAccountId: body.data.bankAccountId,
+      type: "income",
+      amount: paymentAmount.toString(),
+      description: `Cobro factura ${invoice.invoiceNumber}`,
+      movementDate: body.data.date || new Date().toISOString().split("T")[0],
+      invoiceId: params.data.id,
+    });
+
+    const newBalance = parseFloat(account.currentBalance) + paymentAmount;
+    await tx.update(bankAccountsTable).set({ currentBalance: newBalance.toString() }).where(eq(bankAccountsTable.id, body.data.bankAccountId));
+  });
 
   const result = await getInvoiceWithItems(params.data.id);
   res.json(result);

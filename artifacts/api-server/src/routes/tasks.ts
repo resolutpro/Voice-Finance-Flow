@@ -25,6 +25,10 @@ router.get("/tasks", async (req, res): Promise<void> => {
 router.post("/tasks", async (req, res): Promise<void> => {
   const parsed = CreateTaskBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  if (!parsed.data.companyId) {
+    res.status(400).json({ error: "Se requiere seleccionar una empresa para crear una tarea" });
+    return;
+  }
   const [task] = await db.insert(tasksTable).values(parsed.data).returning();
   res.status(201).json(task);
 });
