@@ -14,6 +14,8 @@ import dashboardRouter from "./dashboard";
 import cashForecastRouter from "./cash-forecast";
 import tasksRouter from "./tasks";
 import voiceRouter from "./voice";
+import receivablesRouter from "./receivables";
+import payablesRouter from "./payables";
 import seedRouter from "./seed";
 
 const router: IRouter = Router();
@@ -33,6 +35,8 @@ router.use(dashboardRouter);
 router.use(cashForecastRouter);
 router.use(tasksRouter);
 router.use(voiceRouter);
+router.use(receivablesRouter);
+router.use(payablesRouter);
 router.use(seedRouter);
 
 export default router;

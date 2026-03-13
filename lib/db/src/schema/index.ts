@@ -10,3 +10,5 @@ export * from "./cash-movements";
 export * from "./tasks";
 export * from "./document-series";
 export * from "./users";
+export * from "./receivables";
+export * from "./payables";

@@ -40,7 +40,15 @@ async function getInvoiceWithItems(invoiceId: number) {
   return { ...invoice, items, clientName, companyName: company?.name ?? null };
 }
 
-async function getNextInvoiceNumber(companyId: number): Promise<string> {
+function peekNextInvoiceNumber(companyId: number, series: { prefix: string; nextNumber: number } | null): string {
+  const year = new Date().getFullYear();
+  if (series) {
+    return `${series.prefix}${series.nextNumber.toString().padStart(3, "0")}`;
+  }
+  return `${year}-001`;
+}
+
+async function reserveNextInvoiceNumber(companyId: number): Promise<string> {
   const year = new Date().getFullYear();
   const [series] = await db.select().from(documentSeriesTable)
     .where(and(eq(documentSeriesTable.companyId, companyId), eq(documentSeriesTable.type, "invoice"), eq(documentSeriesTable.year, year)));
@@ -52,13 +60,13 @@ async function getNextInvoiceNumber(companyId: number): Promise<string> {
   }
 
   const prefix = `${year}-`;
-  const [newSeries] = await db.insert(documentSeriesTable).values({
+  await db.insert(documentSeriesTable).values({
     companyId,
     type: "invoice",
     prefix,
     nextNumber: 2,
     year,
-  }).returning();
+  });
 
   return `${prefix}001`;
 }
@@ -66,13 +74,28 @@ async function getNextInvoiceNumber(companyId: number): Promise<string> {
 router.get("/invoices/next-number", async (req, res): Promise<void> => {
   const query = GetNextInvoiceNumberQueryParams.safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
-  const invoiceNumber = await getNextInvoiceNumber(query.data.companyId);
+  const year = new Date().getFullYear();
+  const [series] = await db.select().from(documentSeriesTable)
+    .where(and(eq(documentSeriesTable.companyId, query.data.companyId), eq(documentSeriesTable.type, "invoice"), eq(documentSeriesTable.year, year)));
+  const invoiceNumber = peekNextInvoiceNumber(query.data.companyId, series ?? null);
   res.json({ invoiceNumber });
 });
 
 router.get("/invoices", async (req, res): Promise<void> => {
   const query = ListInvoicesQueryParams.safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+
+  const today = new Date().toISOString().split("T")[0];
+  const overdueInvoices = await db.select({ id: invoicesTable.id }).from(invoicesTable)
+    .where(and(
+      eq(invoicesTable.status, "issued"),
+    ));
+  for (const inv of overdueInvoices) {
+    const [full] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, inv.id));
+    if (full && full.dueDate && full.dueDate < today && full.status !== "paid" && full.status !== "draft" && full.status !== "overdue") {
+      await db.update(invoicesTable).set({ status: "overdue" }).where(eq(invoicesTable.id, inv.id));
+    }
+  }
 
   const conditions = [];
   if (query.data.companyId) conditions.push(eq(invoicesTable.companyId, query.data.companyId));
@@ -119,7 +142,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
 
   let invoiceNumber = invoiceData.invoiceNumber;
   if (!invoiceNumber || invoiceNumber === "") {
-    invoiceNumber = await getNextInvoiceNumber(invoiceData.companyId);
+    invoiceNumber = await reserveNextInvoiceNumber(invoiceData.companyId);
   }
 
   const [invoice] = await db.insert(invoicesTable).values({
