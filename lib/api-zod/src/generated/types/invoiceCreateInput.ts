@@ -13,7 +13,7 @@ export interface InvoiceCreateInput {
   clientId?: number | null;
   /** @nullable */
   projectId?: number | null;
-  invoiceNumber: string;
+  invoiceNumber?: string;
   status?: string;
   issueDate: string;
   /** @nullable */

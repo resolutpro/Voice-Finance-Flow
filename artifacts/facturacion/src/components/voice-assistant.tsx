@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mic, MicOff, Sparkles, X, Check } from "lucide-react";
 import { useCompany } from "@/hooks/use-company";
-import { useParseVoiceCommand, useCreateInvoice, useCreateExpense, useCreateTask } from "@workspace/api-client-react";
+import { useParseVoiceCommand, useCreateInvoice, useCreateExpense, useCreateTask, useRegisterInvoicePayment, useListInvoices, useListBankAccounts } from "@workspace/api-client-react";
 import { Button, Modal, Input, Label } from "@/components/shared-ui";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -70,6 +70,9 @@ export function VoiceAssistant() {
   const createInvoiceMutation = useCreateInvoice();
   const createExpenseMutation = useCreateExpense();
   const createTaskMutation = useCreateTask();
+  const registerPaymentMutation = useRegisterInvoicePayment();
+  const { data: allInvoices } = useListInvoices(activeCompanyId ? { companyId: activeCompanyId } : undefined);
+  const { data: bankAccounts } = useListBankAccounts(activeCompanyId ? { companyId: activeCompanyId } : undefined);
 
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
@@ -229,6 +232,43 @@ export function VoiceAssistant() {
       return;
     }
 
+    if (voiceIntent === "register_payment") {
+      const invoiceNumber = editablePreview.invoiceNumber;
+      const paymentAmount = editablePreview.amount;
+      const matchedInvoice = allInvoices?.find(inv => inv.invoiceNumber === invoiceNumber);
+      const defaultAccount = bankAccounts?.[0];
+
+      if (!matchedInvoice) {
+        toast({ title: "Error", description: `No se encontró la factura ${invoiceNumber || "indicada"}.`, variant: "destructive" });
+        return;
+      }
+      if (!defaultAccount) {
+        toast({ title: "Error", description: "No hay cuentas bancarias disponibles.", variant: "destructive" });
+        return;
+      }
+
+      registerPaymentMutation.mutate({
+        id: matchedInvoice.id,
+        data: {
+          amount: paymentAmount || (parseFloat(matchedInvoice.total) - parseFloat(matchedInvoice.paidAmount)).toString(),
+          bankAccountId: defaultAccount.id,
+          date: new Date().toISOString().split("T")[0],
+        }
+      }, {
+        onSuccess: () => {
+          toast({ title: "Cobro registrado", description: `Se ha registrado el cobro de la factura ${invoiceNumber}.` });
+          setShowPreview(false);
+          queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/bank-accounts"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/cash-movements"] });
+        },
+        onError: () => {
+          toast({ title: "Error", description: "No se pudo registrar el cobro.", variant: "destructive" });
+        }
+      });
+      return;
+    }
+
     toast({ title: "Acción no soportada", description: "Este tipo de acción aún no se puede confirmar.", variant: "destructive" });
   };
 
@@ -343,7 +383,7 @@ export function VoiceAssistant() {
             <Button
               onClick={handleConfirmPreview}
               className="gap-2"
-              disabled={createInvoiceMutation.isPending || createExpenseMutation.isPending || createTaskMutation.isPending}
+              disabled={createInvoiceMutation.isPending || createExpenseMutation.isPending || createTaskMutation.isPending || registerPaymentMutation.isPending}
             >
               <Check className="w-4 h-4" /> Confirmar y Guardar
             </Button>

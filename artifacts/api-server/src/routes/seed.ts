@@ -4,6 +4,11 @@ import { db, companiesTable, clientsTable, suppliersTable, projectsTable, catego
 const router: IRouter = Router();
 
 router.post("/seed", async (_req, res): Promise<void> => {
+  if (process.env.NODE_ENV === "production") {
+    res.status(403).json({ error: "Seed endpoint is disabled in production" });
+    return;
+  }
+
   await db.delete(cashMovementsTable);
   await db.delete(invoiceItemsTable);
   await db.delete(invoicesTable);

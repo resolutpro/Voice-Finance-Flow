@@ -1295,7 +1295,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/InvoiceItemInput"
-      required: [companyId, invoiceNumber, issueDate, items]
+      required: [companyId, issueDate, items]
 
     VendorInvoice:
       type: object
