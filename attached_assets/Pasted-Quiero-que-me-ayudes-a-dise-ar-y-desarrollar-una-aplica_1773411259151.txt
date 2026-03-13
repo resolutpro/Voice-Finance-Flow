@@ -1,0 +1,319 @@
+Quiero que me ayudes a diseñar y desarrollar una aplicación web de facturación, tesorería y control operativo para un grupo de empresas.
+
+IMPORTANTE:
+No quiero una app genérica de facturación. Quiero una app web intuitiva, muy fácil de usar, con el mínimo tecleo posible y orientada a automatizar al máximo el trabajo diario. La prioridad es que la entrada de información sea lo más rápida posible, idealmente por voz siempre que tenga sentido.
+
+CONTEXTO DEL NEGOCIO
+La aplicación debe servir para gestionar 4 entidades empresariales distintas, incluyendo una UTE. La app debe ser multiempresa desde el núcleo, no como un añadido posterior. El usuario debe poder trabajar por empresa y también ver información consolidada del grupo cuando corresponda.
+
+OBJETIVO PRINCIPAL
+Necesito una app para centralizar:
+- facturación emitida
+- facturación recibida
+- clientes
+- proveedores
+- gastos
+- proyectos
+- tesorería
+- previsión de caja
+- tareas y seguimiento
+
+El objetivo real no es solo emitir facturas, sino tener control operativo y financiero del día a día, con foco en:
+- saber qué se ha facturado
+- qué está pendiente de cobrar
+- qué está pendiente de pagar
+- cómo está la tesorería actual
+- cómo estará la caja en las próximas semanas
+- qué tareas o seguimientos están pendientes
+
+PRIORIDAD ABSOLUTA DE UX
+La app debe ser:
+- intuitiva
+- visualmente clara
+- rápida
+- con muy poco texto manual
+- optimizada para escritorio
+- preparada para crecer
+
+Quiero que todo lo que sea repetitivo, manual o propenso a errores quede automatizado.
+
+MUY IMPORTANTE: MINIMIZAR EL TECLADO
+Cuando digo “minimizar el tecleo”, quiero decir:
+- autocompletar agresivo en clientes, proveedores, conceptos, proyectos y categorías
+- reutilización de datos existentes
+- valores por defecto inteligentes
+- duplicación de documentos anteriores
+- plantillas reutilizables
+- generación automática de numeración
+- cálculo automático de impuestos y totales
+- sugerencias automáticas de fechas, vencimientos y conceptos
+- workflows con pocos clics
+- posibilidad de crear registros por voz
+
+ENTRADA POR VOZ
+La app debe contemplar desde el diseño una capa fuerte de entrada por voz.
+
+Quiero que propongas una UX en la que muchas acciones se puedan hacer hablando, por ejemplo:
+- “crear factura para Cliente X por 1.250 euros más IVA con concepto mantenimiento marzo”
+- “añadir gasto de gasolina de 85 euros para Empresa Y”
+- “crear tarea: llamar a proveedor Z el viernes”
+- “registrar cobro de factura 2026-015”
+- “mostrar próximos pagos de la semana”
+- “crear presupuesto para Cliente X”
+- “añadir reunión con notas”
+
+La voz no debe ser un extra decorativo, sino una forma principal de entrada de datos cuando sea viable.
+
+Necesito que diseñes la app asumiendo estas capacidades:
+- dictado de formularios
+- comandos por voz para crear registros
+- edición rápida por voz
+- búsqueda por voz
+- posibilidad de convertir frases naturales en acciones estructuradas
+- confirmación visual antes de guardar cuando haya ambigüedad
+
+Si una acción por voz no se puede resolver con seguridad, la app debe mostrar una propuesta editable antes de confirmar.
+
+ALCANCE FUNCIONAL
+
+1. DASHBOARD / INICIO
+Quiero una pantalla principal que responda rápidamente a estas preguntas:
+- cuánto dinero hay ahora
+- cuánto está pendiente de cobrar
+- cuánto está pendiente de pagar
+- qué vence esta semana
+- qué facturas están vencidas
+- cuál es la previsión de caja a corto plazo
+- qué tareas importantes están pendientes
+
+Debe incluir:
+- resumen por empresa
+- vista consolidada
+- alertas
+- próximos cobros y pagos
+- gráfico de previsión de caja
+- tareas pendientes
+
+2. VENTAS
+Módulo para:
+- presupuestos
+- facturas emitidas
+- clientes
+- proyectos relacionados
+
+Funciones necesarias:
+- crear presupuesto
+- convertir presupuesto en factura
+- crear factura desde cero
+- duplicar factura anterior
+- estados: borrador, emitida, cobrada, parcialmente cobrada, vencida
+- vencimientos
+- PDF descargable
+- asociación a empresa y proyecto
+- historial por cliente
+- filtros y búsqueda rápida
+
+3. COMPRAS Y GASTOS
+Módulo para:
+- facturas recibidas
+- gastos rápidos
+- proveedores
+- gastos recurrentes
+
+Funciones:
+- registrar factura recibida
+- registrar gasto simple
+- clasificar por categoría
+- marcar como pagado o pendiente
+- vencimientos
+- adjuntar documento
+- repetir gastos periódicos
+- filtros por empresa, proveedor, categoría y estado
+
+4. TESORERÍA
+La app debe tener control operativo de tesorería.
+
+Funciones:
+- cuentas bancarias por empresa
+- saldo actual por cuenta
+- movimientos manuales
+- cobros y pagos asociados a documentos
+- previsión según vencimientos
+- transferencias internas entre cuentas
+- vista por empresa y consolidada
+
+5. PREVISIÓN DE CAJA
+Este módulo es clave.
+
+Debe permitir ver:
+- saldo actual
+- cobros previstos
+- pagos previstos
+- gastos e ingresos recurrentes
+- saldo proyectado por semanas y por meses
+- alertas de tensión de caja
+- vista por empresa y consolidada
+
+Quiero una interfaz muy visual y útil para toma de decisiones.
+
+6. TAREAS Y SEGUIMIENTO
+Módulo sencillo, no un gestor de proyectos complejo.
+
+Debe permitir:
+- crear tareas
+- asociarlas a empresa, cliente, proveedor o proyecto
+- asignar responsable
+- fecha objetivo
+- estado
+- notas
+- seguimiento semanal
+- registrar reuniones y convertir notas en tareas
+
+También aquí la voz debe ser una opción principal:
+- crear tareas por voz
+- añadir observaciones por voz
+- resumir notas de reunión y proponer tareas
+
+MULTIEMPRESA
+La app debe funcionar correctamente para 4 entidades, incluyendo una UTE.
+
+Necesito que propongas una arquitectura multiempresa real:
+- cada registro pertenece a una empresa
+- cada empresa puede tener su propia numeración
+- sus propios datos fiscales
+- sus propios logos y plantillas
+- sus propias cuentas bancarias
+- sus propios documentos
+- posibilidad de reporting consolidado del grupo
+
+BASE DE DATOS
+Quiero una base de datos bien diseñada y escalable.
+
+Propón un esquema relacional claro, por ejemplo con entidades como:
+- companies
+- brands
+- users
+- clients
+- suppliers
+- projects
+- quotes
+- quote_items
+- invoices
+- invoice_items
+- vendor_invoices
+- expenses
+- bank_accounts
+- cash_movements
+- receivables
+- payables
+- recurring_entries
+- tasks
+- meetings
+- attachments
+- categories
+- payment_terms
+- document_series
+
+Necesito que diseñes bien las relaciones y que expliques qué tablas son imprescindibles para una primera versión y cuáles pueden dejarse preparadas para ampliaciones.
+
+REGLAS IMPORTANTES DE MODELADO
+- Separar documentos de cobros/pagos
+- Permitir cobros parciales y pagos parciales
+- Soportar vencimientos
+- Soportar multiempresa de forma nativa
+- Permitir consolidado
+- Mantener historial y trazabilidad
+- Preparar estructura para adjuntos y para futuras automatizaciones
+
+AUTOMATIZACIÓN
+Quiero que propongas automatizaciones desde la primera versión:
+- numeración automática
+- cálculo automático de impuestos y totales
+- autocompletado inteligente
+- sugerencias de conceptos frecuentes
+- duplicar documentos anteriores
+- generar factura desde presupuesto
+- generar tareas desde reuniones
+- alertas de vencimientos
+- alertas de caja
+- precarga de datos según empresa activa
+- filtros guardados
+- acciones rápidas
+
+ENTRADA POR VOZ Y CAPA DE IA
+Quiero que diseñes una capa de interpretación de lenguaje natural para acciones frecuentes.
+
+Ejemplos:
+- crear factura
+- registrar gasto
+- crear tarea
+- buscar documentos
+- consultar previsión
+- registrar cobro o pago
+- resumir notas
+- extraer tareas de una reunión
+
+Propón una arquitectura viable para esto dentro de una app web moderna.
+Si lo ves conveniente, plantea una capa tipo:
+- speech-to-text
+- parser de intención
+- extracción de entidades
+- validación
+- previsualización
+- confirmación
+- guardado
+
+REQUISITOS TÉCNICOS
+Quiero que propongas una solución moderna, mantenible y escalable.
+
+Por defecto, plantea algo como:
+- frontend en React + TypeScript
+- backend en Node.js / TypeScript
+- base de datos PostgreSQL
+- ORM moderno
+- almacenamiento de adjuntos
+- generación de PDFs
+- autenticación y roles simples
+- diseño responsive, pero orientado sobre todo a escritorio
+
+PROPUESTA QUE QUIERO DE TI
+No empieces a picar código sin criterio.
+
+Primero quiero que me entregues, en este orden:
+
+1. una propuesta de arquitectura general de la app
+2. el sitemap o estructura de pantallas
+3. los módulos funcionales
+4. el diseño de base de datos inicial
+5. los flujos principales de usuario
+6. cómo resolverías la entrada por voz
+7. qué funcionalidades incluirías en MVP fase 1
+8. qué dejarías para fase 2
+9. una propuesta de stack técnico
+10. después de eso, empieza a generar el proyecto
+
+RESTRICCIONES DE DISEÑO
+- No quiero una app recargada
+- No quiero flujos largos
+- No quiero formularios pesados
+- No quiero que el usuario tenga que escribir mucho
+- No quiero duplicidad de datos
+- Quiero rapidez operativa por encima de todo
+
+PRINCIPIOS DE PRODUCTO
+- máxima automatización
+- mínimo tecleo
+- voz siempre que aporte valor
+- multiempresa real
+- claridad visual
+- control de caja como centro del sistema
+- facturación y tesorería conectadas
+- facilidad de uso para usuarios no técnicos
+
+Cuando respondas:
+- sé concreto
+- estructura bien la propuesta
+- toma decisiones de producto y arquitectura
+- no me devuelvas solo ideas genéricas
+- propón una solución ejecutable
+- después empieza a construir la app con esa base
