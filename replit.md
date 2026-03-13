@@ -53,6 +53,10 @@ All tables in `lib/db/src/schema/`:
 - **bank_accounts** - Bank accounts per company with balance
 - **cash_movements** - All cash movements (income/expense) linked to documents
 - **tasks** - Operational tasks with priority and due dates
+- **document_series** - Auto invoice numbering per company/year
+- **users** - User accounts (email, name, role, defaultCompanyId)
+- **receivables** - Client receivables tracking (linked to invoices)
+- **payables** - Supplier payables tracking (linked to vendor invoices)
 
 ## API Routes
 
@@ -76,12 +80,15 @@ All routes in `artifacts/api-server/src/routes/`:
 - `GET /api/cash-forecast` - Cash forecast by weeks
 - `GET/POST /api/tasks` - Task CRUD
 - `POST /api/voice/parse` - Voice command NLP parsing
-- `POST /api/seed` - Seed demo data
+- `GET /api/invoices/:id/pdf` - Download invoice PDF
+- `GET/POST /api/receivables` - Receivables CRUD
+- `GET/POST /api/payables` - Payables CRUD
+- `POST /api/seed` - Seed demo data (blocked in production)
 
 ## Frontend Pages
 
 - `/` - Dashboard with KPIs, balance by company, weekly due items, recent invoices
-- `/invoices` - Invoice list with create/edit forms, payment registration
+- `/invoices` - Invoice list with create modal, PDF download, status management (draft→issued→paid/overdue/cancelled)
 - `/purchases` - Vendor invoices and quick expenses (tabbed view)
 - `/treasury` - Bank accounts with balances, cash movements
 - `/forecast` - Cash forecast chart (Recharts) with weekly projections
@@ -91,7 +98,9 @@ All routes in `artifacts/api-server/src/routes/`:
 
 - **Multi-company**: Every record belongs to a company. Company selector in header filters all views. Consolidated group view available.
 - **Voice input**: Floating microphone button uses Web Speech API. Parsed by backend NLP into structured actions. Shows editable preview before saving.
-- **Auto-calculation**: Tax amounts, totals, invoice numbering all automatic
+- **Auto-calculation**: Tax amounts, totals, invoice numbering all automatic (read-only preview; number reserved atomically at creation)
+- **Invoice PDF**: Generate and download professional PDF invoices with company/client details, line items, and totals
+- **Invoice lifecycle**: Status transitions (draft→issued→paid) with automatic overdue detection for past-due invoices
 - **Treasury tracking**: Payments on invoices automatically update bank balances and create cash movements
 - **Cash forecast**: Projects balance based on pending receivables/payables due dates
 

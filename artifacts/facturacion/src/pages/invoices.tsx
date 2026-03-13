@@ -1,16 +1,56 @@
 import { useState } from "react";
-import { useListInvoices, useCreateInvoice, useListClients, useGetNextInvoiceNumber } from "@workspace/api-client-react";
+import { useListInvoices, useCreateInvoice, useUpdateInvoiceStatus, useListClients, useGetNextInvoiceNumber } from "@workspace/api-client-react";
 import { useCompany } from "@/hooks/use-company";
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Modal, Input, Label, Select } from "@/components/shared-ui";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Plus, Search, FileText, Trash2 } from "lucide-react";
+import { Plus, Search, FileText, Trash2, Download, CheckCircle, Send, MoreVertical } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
+
+const statusLabels: Record<string, string> = {
+  draft: "Borrador",
+  issued: "Emitida",
+  paid: "Cobrada",
+  overdue: "Vencida",
+  cancelled: "Anulada",
+};
+
 export default function InvoicesPage() {
   const { activeCompanyId } = useCompany();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
   const { data: invoices, isLoading } = useListInvoices(activeCompanyId ? { companyId: activeCompanyId } : undefined);
+  const statusMutation = useUpdateInvoiceStatus();
+
+  const filtered = invoices?.filter((inv) => {
+    if (statusFilter && inv.status !== statusFilter) return false;
+    if (search) {
+      const s = search.toLowerCase();
+      if (!inv.invoiceNumber.toLowerCase().includes(s) && !(inv.clientName || "").toLowerCase().includes(s)) return false;
+    }
+    return true;
+  });
+
+  const handleStatusChange = (invoiceId: number, newStatus: string) => {
+    statusMutation.mutate({ id: invoiceId, data: { status: newStatus } }, {
+      onSuccess: () => {
+        toast({ title: "Estado actualizado", description: `Factura marcada como ${statusLabels[newStatus] || newStatus}` });
+        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+        setMenuOpenId(null);
+      }
+    });
+  };
+
+  const handleDownloadPdf = (invoiceId: number) => {
+    const url = `${API_BASE}/invoices/${invoiceId}/pdf`;
+    window.open(url, "_blank");
+  };
 
   return (
     <div className="space-y-6">
@@ -28,19 +68,20 @@ export default function InvoicesPage() {
         <div className="p-4 border-b border-border/50 flex gap-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Buscar por número o cliente..." />
+            <Input className="pl-9" placeholder="Buscar por número o cliente..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <Select className="w-40">
+          <Select className="w-40" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="">Todos los estados</option>
             <option value="draft">Borrador</option>
             <option value="issued">Emitida</option>
             <option value="paid">Cobrada</option>
+            <option value="overdue">Vencida</option>
           </Select>
         </div>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-8 text-center text-muted-foreground">Cargando facturas...</div>
-          ) : !invoices?.length ? (
+          ) : !filtered?.length ? (
             <div className="p-12 text-center flex flex-col items-center">
               <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
                 <FileText className="w-8 h-8 text-muted-foreground" />
@@ -60,21 +101,67 @@ export default function InvoicesPage() {
                     <th className="px-6 py-4 font-semibold">Vencimiento</th>
                     <th className="px-6 py-4 font-semibold">Estado</th>
                     <th className="px-6 py-4 font-semibold text-right">Total</th>
+                    <th className="px-6 py-4 font-semibold text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
-                  {invoices.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-secondary/20 transition-colors group cursor-pointer">
+                  {filtered.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-secondary/20 transition-colors group">
                       <td className="px-6 py-4 font-medium text-primary">{inv.invoiceNumber}</td>
                       <td className="px-6 py-4 font-medium">{inv.clientName || 'Cliente Genérico'}</td>
                       <td className="px-6 py-4 text-muted-foreground">{formatDate(inv.issueDate)}</td>
                       <td className="px-6 py-4 text-muted-foreground">{inv.dueDate ? formatDate(inv.dueDate) : '-'}</td>
                       <td className="px-6 py-4">
                         <Badge variant={inv.status === 'paid' ? 'success' : inv.status === 'overdue' ? 'destructive' : inv.status === 'draft' ? 'secondary' : 'warning'}>
-                          {inv.status}
+                          {statusLabels[inv.status] || inv.status}
                         </Badge>
                       </td>
                       <td className="px-6 py-4 text-right font-semibold font-mono">{formatCurrency(inv.total)}</td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-primary transition-colors"
+                            title="Descargar PDF"
+                            onClick={() => handleDownloadPdf(inv.id)}
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                          <div className="relative">
+                            <button
+                              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-primary transition-colors"
+                              title="Cambiar estado"
+                              onClick={() => setMenuOpenId(menuOpenId === inv.id ? null : inv.id)}
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                            {menuOpenId === inv.id && (
+                              <div className="absolute right-0 top-8 z-50 bg-card border border-border rounded-xl shadow-lg py-1 w-44">
+                                {inv.status === "draft" && (
+                                  <button className="w-full px-4 py-2 text-left text-sm hover:bg-secondary/50 flex items-center gap-2"
+                                    onClick={() => handleStatusChange(inv.id, "issued")}>
+                                    <Send className="w-3.5 h-3.5" /> Emitir factura
+                                  </button>
+                                )}
+                                {(inv.status === "issued" || inv.status === "overdue") && (
+                                  <button className="w-full px-4 py-2 text-left text-sm hover:bg-secondary/50 flex items-center gap-2"
+                                    onClick={() => handleStatusChange(inv.id, "paid")}>
+                                    <CheckCircle className="w-3.5 h-3.5" /> Marcar cobrada
+                                  </button>
+                                )}
+                                {inv.status !== "cancelled" && inv.status !== "paid" && (
+                                  <button className="w-full px-4 py-2 text-left text-sm hover:bg-secondary/50 text-destructive flex items-center gap-2"
+                                    onClick={() => handleStatusChange(inv.id, "cancelled")}>
+                                    <Trash2 className="w-3.5 h-3.5" /> Anular factura
+                                  </button>
+                                )}
+                                {inv.status === "paid" && (
+                                  <span className="w-full px-4 py-2 text-xs text-muted-foreground block">Sin acciones disponibles</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -100,6 +187,7 @@ function CreateInvoiceModal({ isOpen, onClose, companyId }: { isOpen: boolean, o
   const autoInvoiceNumber = nextNumberData?.invoiceNumber || "";
   const [invoiceNumberOverride, setInvoiceNumberOverride] = useState("");
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dueDate, setDueDate] = useState("");
   const [items, setItems] = useState([{ description: "", quantity: "1", unitPrice: "0" }]);
 
   const handleAddItem = () => setItems([...items, { description: "", quantity: "1", unitPrice: "0" }]);
@@ -122,6 +210,7 @@ function CreateInvoiceModal({ isOpen, onClose, companyId }: { isOpen: boolean, o
         clientId: clientId ? Number(clientId) : null,
         invoiceNumber: invoiceNumberOverride || "",
         issueDate,
+        dueDate: dueDate || undefined,
         taxRate: "21",
         items
       }
@@ -130,6 +219,10 @@ function CreateInvoiceModal({ isOpen, onClose, companyId }: { isOpen: boolean, o
         toast({ title: "Factura creada", description: "La factura se ha guardado correctamente." });
         queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
         onClose();
+        setClientId("");
+        setInvoiceNumberOverride("");
+        setItems([{ description: "", quantity: "1", unitPrice: "0" }]);
+        setDueDate("");
       }
     });
   };
@@ -152,6 +245,10 @@ function CreateInvoiceModal({ isOpen, onClose, companyId }: { isOpen: boolean, o
           <div>
             <Label>Fecha de Emisión</Label>
             <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+          </div>
+          <div>
+            <Label>Fecha de Vencimiento</Label>
+            <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
           </div>
         </div>
 
