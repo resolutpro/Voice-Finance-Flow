@@ -117,6 +117,7 @@ router.post("/vendor-invoices/:id/payment", async (req, res): Promise<void> => {
     await tx.update(vendorInvoicesTable).set({ paidAmount: newPaid.toString(), status: newStatus }).where(eq(vendorInvoicesTable.id, params.data.id));
 
     await tx.insert(cashMovementsTable).values({
+      companyId: invoice.companyId,
       bankAccountId: body.data.bankAccountId,
       type: "expense",
       amount: (-paymentAmount).toString(),

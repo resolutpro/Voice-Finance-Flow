@@ -4,11 +4,21 @@ import { useCompany } from "@/hooks/use-company";
 import { Card, CardContent, Button, Badge, Modal, Input, Label } from "@/components/shared-ui";
 import { Plus, CheckCircle2, Clock, AlertCircle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 export default function TasksPage() {
   const { activeCompanyId } = useCompany();
   const { data: tasks, isLoading } = useListTasks(activeCompanyId ? { companyId: activeCompanyId } : undefined);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const { toast } = useToast();
+
+  const handleNewTask = () => {
+    if (!activeCompanyId) {
+      toast({ title: "Selecciona una empresa", description: "Debes seleccionar una empresa específica para crear una tarea.", variant: "destructive" });
+      return;
+    }
+    setIsCreateOpen(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -17,7 +27,7 @@ export default function TasksPage() {
           <h2 className="text-3xl font-display font-bold text-foreground">Tareas Operativas</h2>
           <p className="text-muted-foreground">Seguimiento de acciones pendientes</p>
         </div>
-        <Button onClick={() => setIsCreateOpen(true)} className="gap-2 shadow-lg shadow-primary/20">
+        <Button onClick={handleNewTask} className="gap-2 shadow-lg shadow-primary/20">
           <Plus className="w-4 h-4" /> Nueva Tarea
         </Button>
       </div>

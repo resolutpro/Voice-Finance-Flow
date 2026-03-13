@@ -1,12 +1,14 @@
 import { pgTable, serial, text, timestamp, integer, numeric, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { companiesTable } from "./companies";
 import { bankAccountsTable } from "./bank-accounts";
 import { invoicesTable } from "./invoices";
 import { vendorInvoicesTable } from "./vendor-invoices";
 
 export const cashMovementsTable = pgTable("cash_movements", {
   id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companiesTable.id),
   bankAccountId: integer("bank_account_id").notNull().references(() => bankAccountsTable.id),
   type: text("type").notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),

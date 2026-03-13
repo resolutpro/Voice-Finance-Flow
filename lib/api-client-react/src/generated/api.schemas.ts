@@ -404,6 +404,8 @@ export interface CashMovement {
 }
 
 export interface CashMovementInput {
+  /** @nullable */
+  companyId?: number | null;
   bankAccountId: number;
   type: string;
   amount: string;

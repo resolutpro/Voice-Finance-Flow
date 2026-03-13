@@ -748,6 +748,7 @@ export const ListCashMovementsResponse = zod.array(
 );
 
 export const CreateCashMovementBody = zod.object({
+  companyId: zod.number().nullish(),
   bankAccountId: zod.number(),
   type: zod.string(),
   amount: zod.string(),

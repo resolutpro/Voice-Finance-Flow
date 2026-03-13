@@ -41,9 +41,11 @@ router.post("/cash-movements", async (req, res): Promise<void> => {
   const [account] = await db.select().from(bankAccountsTable).where(eq(bankAccountsTable.id, data.bankAccountId));
   if (!account) { res.status(400).json({ error: "Cuenta bancaria no encontrada" }); return; }
 
+  const insertData = { ...data, companyId: data.companyId || account.companyId };
+
   let movement: typeof cashMovementsTable.$inferSelect;
   await db.transaction(async (tx) => {
-    const [m] = await tx.insert(cashMovementsTable).values(data).returning();
+    const [m] = await tx.insert(cashMovementsTable).values(insertData).returning();
     movement = m;
 
     const amount = parseFloat(data.amount);

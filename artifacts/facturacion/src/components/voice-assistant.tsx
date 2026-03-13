@@ -75,6 +75,9 @@ export function VoiceAssistant() {
   const { data: bankAccounts } = useListBankAccounts(activeCompanyId ? { companyId: activeCompanyId } : undefined);
 
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const manualStopRef = useRef(false);
+  const transcriptRef = useRef("");
+  const processCommandRef = useRef<(text: string) => void>(() => {});
 
   useEffect(() => {
     const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -89,9 +92,14 @@ export function VoiceAssistant() {
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcriptPiece = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            setTranscript(prev => prev + transcriptPiece);
+            setTranscript(prev => {
+              const updated = prev + transcriptPiece;
+              transcriptRef.current = updated;
+              return updated;
+            });
           } else {
             interimTranscript += transcriptPiece;
+            transcriptRef.current = interimTranscript;
             setTranscript(interimTranscript);
           }
         }
@@ -105,6 +113,13 @@ export function VoiceAssistant() {
 
       recognition.onend = () => {
         setIsListening(false);
+        if (!manualStopRef.current) {
+          const finalText = transcriptRef.current;
+          if (finalText.trim()) {
+            processCommandRef.current(finalText);
+          }
+        }
+        manualStopRef.current = false;
       };
 
       recognitionRef.current = recognition;
@@ -146,8 +161,11 @@ export function VoiceAssistant() {
     });
   }, [parseMutation, activeCompanyId, setLocation, toast]);
 
+  processCommandRef.current = processCommand;
+
   const toggleListen = () => {
     if (isListening) {
+      manualStopRef.current = true;
       recognitionRef.current?.stop();
       setIsListening(false);
       processCommand(transcript);

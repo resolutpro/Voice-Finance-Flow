@@ -1499,6 +1499,8 @@ components:
     CashMovementInput:
       type: object
       properties:
+        companyId:
+          type: ["integer", "null"]
         bankAccountId:
           type: integer
         type:
