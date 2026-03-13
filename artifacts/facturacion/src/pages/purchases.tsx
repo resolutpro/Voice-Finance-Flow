@@ -155,6 +155,7 @@ function CreateVendorInvoiceModal({ isOpen, onClose, companyId }: { isOpen: bool
       data: {
         companyId,
         supplierId: supplierId ? Number(supplierId) : undefined,
+        categoryId: categoryId ? Number(categoryId) : undefined,
         invoiceNumber: invoiceNumber || undefined,
         description,
         subtotal: subtotalNum.toString(),
@@ -257,6 +258,7 @@ function CreateExpenseModal({ isOpen, onClose, companyId }: { isOpen: boolean; o
       data: {
         companyId,
         description,
+        categoryId: categoryId ? Number(categoryId) : undefined,
         amount: amountNum.toString(),
         taxRate: "21",
         expenseDate,

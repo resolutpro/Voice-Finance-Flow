@@ -264,6 +264,7 @@ function EditInvoiceModal({ invoice, onClose }: { invoice: InvoiceData; onClose:
       data: {
         companyId: activeCompanyId!,
         clientId: clientId ? Number(clientId) : null,
+        projectId: projectId ? Number(projectId) : undefined,
         invoiceNumber: invoice.invoiceNumber,
         issueDate,
         dueDate: dueDate || undefined,
@@ -386,6 +387,7 @@ function CreateInvoiceModal({ isOpen, onClose, companyId }: { isOpen: boolean, o
       data: {
         companyId,
         clientId: clientId ? Number(clientId) : null,
+        projectId: projectId ? Number(projectId) : undefined,
         invoiceNumber: invoiceNumberOverride || "",
         issueDate,
         dueDate: dueDate || undefined,
