@@ -1,22 +1,51 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Facturación, Tesorería y Previsión de Caja API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: companies
+    description: Company management
+  - name: clients
+    description: Client management
+  - name: suppliers
+    description: Supplier management
+  - name: projects
+    description: Project management
+  - name: categories
+    description: Category management
+  - name: invoices
+    description: Invoice management
+  - name: vendor-invoices
+    description: Vendor invoice management
+  - name: expenses
+    description: Expense management
+  - name: bank-accounts
+    description: Bank account management
+  - name: cash-movements
+    description: Cash movement management
+  - name: treasury
+    description: Treasury dashboard
+  - name: cash-forecast
+    description: Cash forecast
+  - name: dashboard
+    description: Dashboard KPIs
+  - name: tasks
+    description: Task management
+  - name: voice
+    description: Voice command processing
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +53,874 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /companies:
+    get:
+      operationId: listCompanies
+      tags: [companies]
+      summary: List all companies
+      responses:
+        "200":
+          description: List of companies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Company"
+    post:
+      operationId: createCompany
+      tags: [companies]
+      summary: Create a company
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+
+  /companies/{id}:
+    get:
+      operationId: getCompany
+      tags: [companies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Company details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+    patch:
+      operationId: updateCompany
+      tags: [companies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+
+  /clients:
+    get:
+      operationId: listClients
+      tags: [clients]
+      summary: List clients
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Client"
+    post:
+      operationId: createClient
+      tags: [clients]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+
+  /clients/{id}:
+    patch:
+      operationId: updateClient
+      tags: [clients]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+
+  /suppliers:
+    get:
+      operationId: listSuppliers
+      tags: [suppliers]
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of suppliers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Supplier"
+    post:
+      operationId: createSupplier
+      tags: [suppliers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupplierInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Supplier"
+
+  /suppliers/{id}:
+    patch:
+      operationId: updateSupplier
+      tags: [suppliers]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupplierInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Supplier"
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [categories]
+      responses:
+        "200":
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+    post:
+      operationId: createCategory
+      tags: [categories]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+
+  /invoices:
+    get:
+      operationId: listInvoices
+      tags: [invoices]
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: clientId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of invoices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InvoiceWithItems"
+    post:
+      operationId: createInvoice
+      tags: [invoices]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvoiceCreateInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceWithItems"
+
+  /invoices/{id}:
+    get:
+      operationId: getInvoice
+      tags: [invoices]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Invoice details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceWithItems"
+    patch:
+      operationId: updateInvoice
+      tags: [invoices]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvoiceCreateInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceWithItems"
+    delete:
+      operationId: deleteInvoice
+      tags: [invoices]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required:
+                  - success
+
+  /invoices/{id}/status:
+    patch:
+      operationId: updateInvoiceStatus
+      tags: [invoices]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+              required:
+                - status
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceWithItems"
+
+  /invoices/next-number:
+    get:
+      operationId: getNextInvoiceNumber
+      tags: [invoices]
+      parameters:
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Next number
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoiceNumber:
+                    type: string
+                required:
+                  - invoiceNumber
+
+  /vendor-invoices:
+    get:
+      operationId: listVendorInvoices
+      tags: [vendor-invoices]
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of vendor invoices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VendorInvoice"
+    post:
+      operationId: createVendorInvoice
+      tags: [vendor-invoices]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VendorInvoiceInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorInvoice"
+
+  /vendor-invoices/{id}:
+    patch:
+      operationId: updateVendorInvoice
+      tags: [vendor-invoices]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VendorInvoiceInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorInvoice"
+
+  /expenses:
+    get:
+      operationId: listExpenses
+      tags: [expenses]
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of expenses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Expense"
+    post:
+      operationId: createExpense
+      tags: [expenses]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExpenseInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+
+  /expenses/{id}:
+    patch:
+      operationId: updateExpense
+      tags: [expenses]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExpenseInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+
+  /bank-accounts:
+    get:
+      operationId: listBankAccounts
+      tags: [bank-accounts]
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of bank accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BankAccount"
+    post:
+      operationId: createBankAccount
+      tags: [bank-accounts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BankAccountInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankAccount"
+
+  /bank-accounts/{id}:
+    patch:
+      operationId: updateBankAccount
+      tags: [bank-accounts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BankAccountInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankAccount"
+
+  /cash-movements:
+    get:
+      operationId: listCashMovements
+      tags: [cash-movements]
+      parameters:
+        - name: bankAccountId
+          in: query
+          schema:
+            type: integer
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of cash movements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CashMovement"
+    post:
+      operationId: createCashMovement
+      tags: [cash-movements]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CashMovementInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CashMovement"
+
+  /invoices/{id}/payment:
+    post:
+      operationId: registerInvoicePayment
+      tags: [invoices]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: string
+                bankAccountId:
+                  type: integer
+                date:
+                  type: string
+              required:
+                - amount
+                - bankAccountId
+      responses:
+        "200":
+          description: Payment registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceWithItems"
+
+  /vendor-invoices/{id}/payment:
+    post:
+      operationId: registerVendorPayment
+      tags: [vendor-invoices]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: string
+                bankAccountId:
+                  type: integer
+                date:
+                  type: string
+              required:
+                - amount
+                - bankAccountId
+      responses:
+        "200":
+          description: Payment registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorInvoice"
+
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dashboard KPIs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardData"
+
+  /cash-forecast:
+    get:
+      operationId: getCashForecast
+      tags: [cash-forecast]
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+        - name: weeks
+          in: query
+          schema:
+            type: integer
+            default: 8
+      responses:
+        "200":
+          description: Cash forecast
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CashForecast"
+
+  /tasks:
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskItem"
+    post:
+      operationId: createTask
+      tags: [tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskItem"
+
+  /tasks/{id}:
+    patch:
+      operationId: updateTask
+      tags: [tasks]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskItem"
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required:
+                  - success
+
+  /voice/parse:
+    post:
+      operationId: parseVoiceCommand
+      tags: [voice]
+      summary: Parse natural language voice command into structured action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                companyId:
+                  type: integer
+              required:
+                - text
+      responses:
+        "200":
+          description: Parsed command
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceParseResult"
+
+  /seed:
+    post:
+      operationId: seedData
+      tags: [health]
+      summary: Seed initial data
+      responses:
+        "200":
+          description: Seeded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required:
+                  - success
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +931,735 @@ components:
       required:
         - status
 
+    Company:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        taxId:
+          type: string
+        address:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        postalCode:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        logo:
+          type: ["string", "null"]
+        isUte:
+          type: boolean
+        active:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, name, taxId, isUte, active, createdAt, updatedAt]
+
+    CompanyInput:
+      type: object
+      properties:
+        name:
+          type: string
+        taxId:
+          type: string
+        address:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        postalCode:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        logo:
+          type: ["string", "null"]
+        isUte:
+          type: boolean
+        active:
+          type: boolean
+      required: [name, taxId]
+
+    Client:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        taxId:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        postalCode:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        contactPerson:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        paymentTermsDays:
+          type: ["integer", "null"]
+        active:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, companyId, name, active, createdAt, updatedAt]
+
+    ClientInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        name:
+          type: string
+        taxId:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        postalCode:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        contactPerson:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        paymentTermsDays:
+          type: integer
+        active:
+          type: boolean
+      required: [companyId, name]
+
+    Supplier:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        taxId:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        postalCode:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        contactPerson:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        paymentTermsDays:
+          type: ["integer", "null"]
+        active:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, companyId, name, active, createdAt, updatedAt]
+
+    SupplierInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        name:
+          type: string
+        taxId:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        postalCode:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        contactPerson:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        paymentTermsDays:
+          type: integer
+        active:
+          type: boolean
+      required: [companyId, name]
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        clientId:
+          type: ["integer", "null"]
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+        active:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, companyId, name, status, active, createdAt, updatedAt]
+
+    ProjectInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        clientId:
+          type: ["integer", "null"]
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+        active:
+          type: boolean
+      required: [companyId, name]
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+        parentId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+      required: [id, name, type, createdAt]
+
+    CategoryInput:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        parentId:
+          type: ["integer", "null"]
+      required: [name, type]
+
+    InvoiceItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceId:
+          type: integer
+        description:
+          type: string
+        quantity:
+          type: string
+        unitPrice:
+          type: string
+        amount:
+          type: string
+        sortOrder:
+          type: integer
+      required: [id, invoiceId, description, quantity, unitPrice, amount]
+
+    InvoiceItemInput:
+      type: object
+      properties:
+        description:
+          type: string
+        quantity:
+          type: string
+        unitPrice:
+          type: string
+      required: [description, quantity, unitPrice]
+
+    InvoiceWithItems:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        clientId:
+          type: ["integer", "null"]
+        projectId:
+          type: ["integer", "null"]
+        invoiceNumber:
+          type: string
+        status:
+          type: string
+        issueDate:
+          type: string
+        dueDate:
+          type: ["string", "null"]
+        subtotal:
+          type: string
+        taxRate:
+          type: string
+        taxAmount:
+          type: string
+        total:
+          type: string
+        paidAmount:
+          type: string
+        notes:
+          type: ["string", "null"]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceItem"
+        clientName:
+          type: ["string", "null"]
+        companyName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, companyId, invoiceNumber, status, issueDate, subtotal, taxRate, taxAmount, total, paidAmount, items, createdAt, updatedAt]
+
+    InvoiceCreateInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        clientId:
+          type: ["integer", "null"]
+        projectId:
+          type: ["integer", "null"]
+        invoiceNumber:
+          type: string
+        status:
+          type: string
+        issueDate:
+          type: string
+        dueDate:
+          type: ["string", "null"]
+        taxRate:
+          type: string
+        notes:
+          type: ["string", "null"]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceItemInput"
+      required: [companyId, invoiceNumber, issueDate, items]
+
+    VendorInvoice:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        supplierId:
+          type: ["integer", "null"]
+        categoryId:
+          type: ["integer", "null"]
+        invoiceNumber:
+          type: ["string", "null"]
+        status:
+          type: string
+        issueDate:
+          type: string
+        dueDate:
+          type: ["string", "null"]
+        subtotal:
+          type: string
+        taxRate:
+          type: string
+        taxAmount:
+          type: string
+        total:
+          type: string
+        paidAmount:
+          type: string
+        description:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        supplierName:
+          type: ["string", "null"]
+        categoryName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, companyId, status, issueDate, subtotal, taxRate, taxAmount, total, paidAmount, createdAt, updatedAt]
+
+    VendorInvoiceInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        supplierId:
+          type: ["integer", "null"]
+        categoryId:
+          type: ["integer", "null"]
+        invoiceNumber:
+          type: ["string", "null"]
+        status:
+          type: string
+        issueDate:
+          type: string
+        dueDate:
+          type: ["string", "null"]
+        subtotal:
+          type: string
+        taxRate:
+          type: string
+        description:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+      required: [companyId, issueDate, subtotal]
+
+    Expense:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        supplierId:
+          type: ["integer", "null"]
+        categoryId:
+          type: ["integer", "null"]
+        description:
+          type: string
+        amount:
+          type: string
+        taxRate:
+          type: ["string", "null"]
+        taxAmount:
+          type: ["string", "null"]
+        total:
+          type: string
+        expenseDate:
+          type: string
+        status:
+          type: string
+        paidAmount:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        supplierName:
+          type: ["string", "null"]
+        categoryName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, companyId, description, amount, total, expenseDate, status, createdAt, updatedAt]
+
+    ExpenseInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        supplierId:
+          type: ["integer", "null"]
+        categoryId:
+          type: ["integer", "null"]
+        description:
+          type: string
+        amount:
+          type: string
+        taxRate:
+          type: string
+        expenseDate:
+          type: string
+        status:
+          type: string
+        notes:
+          type: ["string", "null"]
+      required: [companyId, description, amount, expenseDate]
+
+    BankAccount:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        bankName:
+          type: ["string", "null"]
+        iban:
+          type: ["string", "null"]
+        currentBalance:
+          type: string
+        active:
+          type: boolean
+        companyName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, companyId, name, currentBalance, active, createdAt, updatedAt]
+
+    BankAccountInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        name:
+          type: string
+        bankName:
+          type: ["string", "null"]
+        iban:
+          type: ["string", "null"]
+        currentBalance:
+          type: string
+        active:
+          type: boolean
+      required: [companyId, name]
+
+    CashMovement:
+      type: object
+      properties:
+        id:
+          type: integer
+        bankAccountId:
+          type: integer
+        type:
+          type: string
+        amount:
+          type: string
+        description:
+          type: ["string", "null"]
+        movementDate:
+          type: string
+        invoiceId:
+          type: ["integer", "null"]
+        vendorInvoiceId:
+          type: ["integer", "null"]
+        bankAccountName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, bankAccountId, type, amount, movementDate, createdAt]
+
+    CashMovementInput:
+      type: object
+      properties:
+        bankAccountId:
+          type: integer
+        type:
+          type: string
+        amount:
+          type: string
+        description:
+          type: ["string", "null"]
+        movementDate:
+          type: string
+        invoiceId:
+          type: ["integer", "null"]
+        vendorInvoiceId:
+          type: ["integer", "null"]
+      required: [bankAccountId, type, amount, movementDate]
+
+    TaskItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: ["integer", "null"]
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+        priority:
+          type: ["string", "null"]
+        dueDate:
+          type: ["string", "null"]
+        relatedType:
+          type: ["string", "null"]
+        relatedId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, title, status, createdAt, updatedAt]
+
+    TaskInput:
+      type: object
+      properties:
+        companyId:
+          type: ["integer", "null"]
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+        priority:
+          type: string
+        dueDate:
+          type: ["string", "null"]
+        relatedType:
+          type: ["string", "null"]
+        relatedId:
+          type: ["integer", "null"]
+      required: [title]
+
+    DashboardData:
+      type: object
+      properties:
+        totalBalance:
+          type: string
+        pendingReceivables:
+          type: string
+        pendingPayables:
+          type: string
+        overdueInvoices:
+          type: integer
+        overduePayables:
+          type: integer
+        thisWeekDue:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              id:
+                type: integer
+              description:
+                type: string
+              amount:
+                type: string
+              dueDate:
+                type: string
+            required: [type, id, description, amount, dueDate]
+        recentInvoices:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceWithItems"
+        pendingTasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskItem"
+        balanceByCompany:
+          type: array
+          items:
+            type: object
+            properties:
+              companyId:
+                type: integer
+              companyName:
+                type: string
+              balance:
+                type: string
+            required: [companyId, companyName, balance]
+      required: [totalBalance, pendingReceivables, pendingPayables, overdueInvoices, overduePayables, thisWeekDue, recentInvoices, pendingTasks, balanceByCompany]
+
+    CashForecast:
+      type: object
+      properties:
+        currentBalance:
+          type: string
+        weeks:
+          type: array
+          items:
+            type: object
+            properties:
+              weekStart:
+                type: string
+              weekEnd:
+                type: string
+              expectedIncome:
+                type: string
+              expectedExpenses:
+                type: string
+              projectedBalance:
+                type: string
+            required: [weekStart, weekEnd, expectedIncome, expectedExpenses, projectedBalance]
+        alerts:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              message:
+                type: string
+              weekStart:
+                type: string
+            required: [type, message, weekStart]
+      required: [currentBalance, weeks, alerts]
+
+    VoiceParseResult:
+      type: object
+      properties:
+        intent:
+          type: string
+        confidence:
+          type: number
+        entities:
+          type: object
+          additionalProperties: true
+        preview:
+          type: object
+          additionalProperties: true
+        message:
+          type: string
+      required: [intent, confidence, entities, message]
