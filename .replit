@@ -75,23 +75,6 @@ waitForPort = 8081
 PORT = "8081"
 BASE_PATH = "/__mockup"
 
-[[workflows.workflow]]
-name = "Run"
-mode = "sequential"
-author = 46575477
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "artifacts/facturacion: web"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "artifacts/api-server: API Server"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "artifacts/mockup-sandbox: Component Preview Server"
-
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true

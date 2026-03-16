@@ -10,18 +10,17 @@ export interface Client {
   id: number;
   companyId: number;
   name: string;
-  /** @nullable */
-  taxId?: string | null;
-  /** @nullable */
-  address?: string | null;
-  /** @nullable */
-  city?: string | null;
-  /** @nullable */
-  postalCode?: string | null;
+  taxId: string;
+  address: string;
+  city: string;
+  province: string;
+  postalCode: string;
   /** @nullable */
   country?: string | null;
   /** @nullable */
   phone?: string | null;
+  /** @nullable */
+  fax?: string | null;
   /** @nullable */
   email?: string | null;
   /** @nullable */

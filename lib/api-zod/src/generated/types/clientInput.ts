@@ -9,24 +9,24 @@
 export interface ClientInput {
   companyId: number;
   name: string;
-  /** @nullable */
-  taxId?: string | null;
-  /** @nullable */
-  address?: string | null;
-  /** @nullable */
-  city?: string | null;
-  /** @nullable */
-  postalCode?: string | null;
+  taxId: string;
+  address: string;
+  city: string;
+  province: string;
+  postalCode: string;
   /** @nullable */
   country?: string | null;
   /** @nullable */
   phone?: string | null;
+  /** @nullable */
+  fax?: string | null;
   /** @nullable */
   email?: string | null;
   /** @nullable */
   contactPerson?: string | null;
   /** @nullable */
   notes?: string | null;
-  paymentTermsDays?: number;
+  /** @nullable */
+  paymentTermsDays?: number | null;
   active?: boolean;
 }

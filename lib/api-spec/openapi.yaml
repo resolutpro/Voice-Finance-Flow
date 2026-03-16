@@ -1009,16 +1009,20 @@ components:
         name:
           type: string
         taxId:
-          type: ["string", "null"]
+          type: string
         address:
-          type: ["string", "null"]
+          type: string
         city:
-          type: ["string", "null"]
+          type: string
+        province:
+          type: string
         postalCode:
-          type: ["string", "null"]
+          type: string
         country:
           type: ["string", "null"]
         phone:
+          type: ["string", "null"]
+        fax:
           type: ["string", "null"]
         email:
           type: ["string", "null"]
@@ -1034,7 +1038,7 @@ components:
           type: string
         updatedAt:
           type: string
-      required: [id, companyId, name, active, createdAt, updatedAt]
+      required: [id, companyId, name, taxId, address, city, province, postalCode, active, createdAt, updatedAt]
 
     ClientInput:
       type: object
@@ -1044,16 +1048,20 @@ components:
         name:
           type: string
         taxId:
-          type: ["string", "null"]
+          type: string
         address:
-          type: ["string", "null"]
+          type: string
         city:
-          type: ["string", "null"]
+          type: string
+        province:
+          type: string
         postalCode:
-          type: ["string", "null"]
+          type: string
         country:
           type: ["string", "null"]
         phone:
+          type: ["string", "null"]
+        fax:
           type: ["string", "null"]
         email:
           type: ["string", "null"]
@@ -1062,10 +1070,10 @@ components:
         notes:
           type: ["string", "null"]
         paymentTermsDays:
-          type: integer
+          type: ["integer", "null"]
         active:
           type: boolean
-      required: [companyId, name]
+      required: [companyId, name, taxId, address, city, province, postalCode]
 
     Supplier:
       type: object
