@@ -29,18 +29,23 @@ export default function SettingsPage() {
   // Obtenemos la lista de empresas reales de tu API
   const { data: companies, isLoading } = useListCompanies();
 
-  // Estado para el formulario
+  // Estado ampliado para el formulario con todos los campos
   const [formData, setFormData] = useState({
     name: "",
     taxId: "",
     address: "",
+    city: "",
+    province: "",
+    postalCode: "",
+    phone: "",
+    fax: "",
   });
 
   // Mutación para CREAR empresa
   const createCompanyMutation = useMutation({
     mutationFn: async (newCompany: typeof formData) => {
       // Usamos ruta relativa por si el proxy de Vite lo maneja, o pon "http://localhost:3000/api/companies" si falla
-      const res = await fetch("http://localhost:3000/api/companies", {
+      const res = await fetch("/api/companies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newCompany),
@@ -50,7 +55,17 @@ export default function SettingsPage() {
     },
     onSuccess: () => {
       toast({ title: "✅ Empresa creada" });
-      setFormData({ name: "", taxId: "", address: "" });
+      // Limpiamos el formulario completamente
+      setFormData({
+        name: "",
+        taxId: "",
+        address: "",
+        city: "",
+        province: "",
+        postalCode: "",
+        phone: "",
+        fax: "",
+      });
       queryClient.invalidateQueries({ queryKey: ["companies"] }); // Refresca la tabla
     },
     onError: () => toast({ title: "❌ Error", variant: "destructive" }),
@@ -59,7 +74,7 @@ export default function SettingsPage() {
   // Mutación para BORRAR empresa
   const deleteCompanyMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`http://localhost:3000/api/companies/${id}`, {
+      const res = await fetch(`/api/companies/${id}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Error al borrar");
@@ -118,28 +133,91 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="taxId">NIF / CIF</Label>
+                  <Label htmlFor="taxId">NIF / CIF *</Label>
                   <Input
                     id="taxId"
                     value={formData.taxId}
                     onChange={(e) =>
                       setFormData({ ...formData, taxId: e.target.value })
                     }
+                    required
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="address">Dirección</Label>
+                  <Label htmlFor="address">Dirección *</Label>
                   <Input
                     id="address"
                     value={formData.address}
                     onChange={(e) =>
                       setFormData({ ...formData, address: e.target.value })
                     }
+                    required
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="city">Localidad *</Label>
+                    <Input
+                      id="city"
+                      value={formData.city}
+                      onChange={(e) =>
+                        setFormData({ ...formData, city: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="postalCode">C.P. *</Label>
+                    <Input
+                      id="postalCode"
+                      value={formData.postalCode}
+                      onChange={(e) =>
+                        setFormData({ ...formData, postalCode: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="province">Provincia *</Label>
+                  <Input
+                    id="province"
+                    value={formData.province}
+                    onChange={(e) =>
+                      setFormData({ ...formData, province: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="phone">Teléfono</Label>
+                    <Input
+                      id="phone"
+                      value={formData.phone}
+                      onChange={(e) =>
+                        setFormData({ ...formData, phone: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="fax">Fax</Label>
+                    <Input
+                      id="fax"
+                      value={formData.fax}
+                      onChange={(e) =>
+                        setFormData({ ...formData, fax: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+
                 <Button
                   type="submit"
-                  className="w-full"
+                  className="w-full mt-2"
                   disabled={createCompanyMutation.isPending}
                 >
                   {createCompanyMutation.isPending ? "Guardando..." : "Guardar"}

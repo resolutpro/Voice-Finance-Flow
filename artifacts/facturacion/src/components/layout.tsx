@@ -100,15 +100,6 @@ export function Layout({ children }: { children: ReactNode }) {
             );
           })}
         </div>
-
-        <div className="p-4 border-t border-border/50">
-          <button
-            onClick={handleSeed}
-            className="text-xs text-muted-foreground underline hover:text-foreground"
-          >
-            Generar datos Demo
-          </button>
-        </div>
       </aside>
 
       {/* Main Content Area */}
@@ -140,7 +131,12 @@ export function Layout({ children }: { children: ReactNode }) {
                   )
                 }
               >
-                <option value="">Consolidado Grupo</option>
+                {/* Opción por defecto para cuando no hay ninguna empresa seleccionada (opcional) */}
+                <option value="" disabled>
+                  Selecciona una empresa...
+                </option>
+
+                {/* Solo mostramos las empresas de la base de datos */}
                 {companies?.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}

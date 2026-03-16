@@ -10,16 +10,16 @@ export interface Company {
   id: number;
   name: string;
   taxId: string;
-  /** @nullable */
-  address?: string | null;
-  /** @nullable */
-  city?: string | null;
-  /** @nullable */
-  postalCode?: string | null;
+  address: string;
+  city: string;
+  province: string;
+  postalCode: string;
   /** @nullable */
   country?: string | null;
   /** @nullable */
   phone?: string | null;
+  /** @nullable */
+  fax?: string | null;
   /** @nullable */
   email?: string | null;
   /** @nullable */

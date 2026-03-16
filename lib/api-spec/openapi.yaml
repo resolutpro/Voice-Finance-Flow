@@ -932,64 +932,72 @@ components:
         - status
 
     Company:
-      type: object
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        taxId:
-          type: string
-        address:
-          type: ["string", "null"]
-        city:
-          type: ["string", "null"]
-        postalCode:
-          type: ["string", "null"]
-        country:
-          type: ["string", "null"]
-        phone:
-          type: ["string", "null"]
-        email:
-          type: ["string", "null"]
-        logo:
-          type: ["string", "null"]
-        isUte:
-          type: boolean
-        active:
-          type: boolean
-        createdAt:
-          type: string
-        updatedAt:
-          type: string
-      required: [id, name, taxId, isUte, active, createdAt, updatedAt]
+       type: object
+       properties:
+         id:
+           type: integer
+         name:
+           type: string
+         taxId:
+           type: string
+         address:
+           type: string
+         city:
+           type: string
+         province:
+           type: string
+         postalCode:
+           type: string
+         country:
+           type: ["string", "null"]
+         phone:
+           type: ["string", "null"]
+         fax:
+           type: ["string", "null"]
+         email:
+           type: ["string", "null"]
+         logo:
+           type: ["string", "null"]
+         isUte:
+           type: boolean
+         active:
+           type: boolean
+         createdAt:
+           type: string
+         updatedAt:
+           type: string
+       required: [id, name, taxId, address, city, province, postalCode, isUte, active, createdAt, updatedAt]
 
     CompanyInput:
-      type: object
-      properties:
-        name:
-          type: string
-        taxId:
-          type: string
-        address:
-          type: ["string", "null"]
-        city:
-          type: ["string", "null"]
-        postalCode:
-          type: ["string", "null"]
-        country:
-          type: ["string", "null"]
-        phone:
-          type: ["string", "null"]
-        email:
-          type: ["string", "null"]
-        logo:
-          type: ["string", "null"]
-        isUte:
-          type: boolean
-        active:
-          type: boolean
-      required: [name, taxId]
+       type: object
+       properties:
+         name:
+           type: string
+         taxId:
+           type: string
+         address:
+           type: string
+         city:
+           type: string
+         province:
+           type: string
+         postalCode:
+           type: string
+         country:
+           type: ["string", "null"]
+         phone:
+           type: ["string", "null"]
+         fax:
+           type: ["string", "null"]
+         email:
+           type: ["string", "null"]
+         logo:
+           type: ["string", "null"]
+         isUte:
+           type: boolean
+         active:
+           type: boolean
+       required: [name, taxId, address, city, province, postalCode]
 
     Client:
       type: object
