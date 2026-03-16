@@ -1,7 +1,21 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, FileText, ShoppingBag, Landmark, TrendingUp, CheckSquare, Building2, Bell, Menu } from "lucide-react";
+import {
+  LayoutDashboard,
+  FileText,
+  ShoppingBag,
+  Landmark,
+  TrendingUp,
+  CheckSquare,
+  Building2,
+  Bell,
+  Menu,
+  Settings,
+  LogOut,
+} from "lucide-react";
+
 import { useCompany } from "@/hooks/use-company";
+import { useAuth } from "@/hooks/use-auth";
 import { useListCompanies, useSeedData } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { VoiceAssistant } from "./voice-assistant";
@@ -9,6 +23,16 @@ import { Select } from "./shared-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+// Menú lateral izquierdo (Sidebar)
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/invoices", label: "Facturas", icon: FileText },
@@ -16,6 +40,7 @@ const navItems = [
   { href: "/treasury", label: "Tesorería", icon: Landmark },
   { href: "/forecast", label: "Previsión", icon: TrendingUp },
   { href: "/tasks", label: "Tareas", icon: CheckSquare },
+  { href: "/settings", label: "Configuración", icon: Settings }, // <-- Configuración añadida aquí
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -26,12 +51,17 @@ export function Layout({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const { logout } = useAuth();
+
   const handleSeed = () => {
     seedMutation.mutate(undefined, {
       onSuccess: () => {
         queryClient.invalidateQueries();
-        toast({ title: "Datos generados", description: "Datos de demostración creados con éxito." });
-      }
+        toast({
+          title: "Datos generados",
+          description: "Datos de demostración creados con éxito.",
+        });
+      },
     });
   };
 
@@ -42,22 +72,26 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="h-16 flex items-center px-6 border-b border-border/50">
           <div className="flex items-center gap-2 text-primary">
             <Landmark className="w-6 h-6" />
-            <span className="font-display font-bold text-xl text-foreground tracking-tight">FinanzasPro</span>
+            <span className="font-display font-bold text-xl text-foreground tracking-tight">
+              FinanzasPro
+            </span>
           </div>
         </div>
-        
+
         <div className="p-4 flex-1 overflow-y-auto space-y-1">
           {navItems.map((item) => {
-            const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
+            const isActive =
+              location === item.href ||
+              (item.href !== "/" && location.startsWith(item.href));
             return (
-              <Link 
-                key={item.href} 
+              <Link
+                key={item.href}
                 href={item.href}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all duration-200",
-                  isActive 
-                    ? "bg-primary/10 text-primary" 
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  isActive
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                 )}
               >
                 <item.icon className="w-5 h-5" />
@@ -68,9 +102,12 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
 
         <div className="p-4 border-t border-border/50">
-           <button onClick={handleSeed} className="text-xs text-muted-foreground underline hover:text-foreground">
-             Generar datos Demo
-           </button>
+          <button
+            onClick={handleSeed}
+            className="text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            Generar datos Demo
+          </button>
         </div>
       </aside>
 
@@ -83,40 +120,65 @@ export function Layout({ children }: { children: ReactNode }) {
               <Menu className="w-6 h-6" />
             </button>
             <h1 className="font-display font-semibold text-lg hidden sm:block">
-              {navItems.find(n => n.href === location || (n.href !== "/" && location.startsWith(n.href)))?.label || "App"}
+              {navItems.find(
+                (n) =>
+                  n.href === location ||
+                  (n.href !== "/" && location.startsWith(n.href)),
+              )?.label || "App"}
             </h1>
           </div>
-          
+
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 bg-secondary rounded-xl px-2 py-1 border border-border/50">
               <Building2 className="w-4 h-4 text-muted-foreground ml-2 hidden sm:block" />
-              <Select 
+              <Select
                 className="h-8 border-none bg-transparent shadow-none focus:ring-0 w-[180px] font-medium"
                 value={activeCompanyId || ""}
-                onChange={(e) => setActiveCompanyId(e.target.value ? Number(e.target.value) : null)}
+                onChange={(e) =>
+                  setActiveCompanyId(
+                    e.target.value ? Number(e.target.value) : null,
+                  )
+                }
               >
                 <option value="">Consolidado Grupo</option>
-                {companies?.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                {companies?.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
                 ))}
               </Select>
             </div>
-            
+
             <button className="w-10 h-10 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:bg-secondary transition-colors">
               <Bell className="w-5 h-5" />
             </button>
-            
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white font-semibold border-2 border-white shadow-sm">
-              JS
-            </div>
+
+            {/* Menú Desplegable del Avatar */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white font-semibold border-2 border-white shadow-sm hover:opacity-90 transition-opacity focus:outline-none">
+                  JS
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+
+                <DropdownMenuItem
+                  onClick={logout}
+                  className="text-red-500 focus:text-red-500 cursor-pointer flex items-center"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Cerrar Sesión</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 
         {/* Page Content */}
         <div className="flex-1 p-4 md:p-8 overflow-y-auto">
-          <div className="max-w-7xl mx-auto space-y-6">
-            {children}
-          </div>
+          <div className="max-w-7xl mx-auto space-y-6">{children}</div>
         </div>
       </main>
 
