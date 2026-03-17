@@ -37,10 +37,10 @@ router.use(dashboardRouter);
 router.use(cashForecastRouter);
 router.use(tasksRouter);
 router.use(voiceRouter);
+router.use(productsRouter);
 router.use(invoicePdfRouter);
 router.use(receivablesRouter);
 router.use(payablesRouter);
 router.use(seedRouter);
-router.use(productsRouter);
 
 export default router;
