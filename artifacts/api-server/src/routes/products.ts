@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 const router = Router();
 
 // GET - List products by company
-router.get("/", async (req, res) => {
+router.get("/products", async (req, res) => {
   try {
     const companyId = req.query.companyId;
 
@@ -29,7 +29,7 @@ router.get("/", async (req, res) => {
 });
 
 // DELETE - Delete a product
-router.delete("/:id", async (req, res) => {
+router.delete("/products/:id", async (req, res) => {
   try {
     const id = req.params.id;
 
@@ -49,7 +49,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // POST /bulk - Bulk insert products
-router.post("/bulk", async (req, res) => {
+router.post("/products/bulk", async (req, res) => {
   try {
     const products = req.body;
 

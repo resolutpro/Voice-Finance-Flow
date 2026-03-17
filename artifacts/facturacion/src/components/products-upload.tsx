@@ -1,8 +1,6 @@
 import React, { useState } from "react";
-import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useToast } from "../hooks/use-toast";
-import { api } from "../lib/api-client"; // Ajusta este import según cómo llames a tu api generada
 
 export function ProductsUpload({
   companyId,
@@ -107,7 +105,7 @@ export function ProductsUpload({
       />
       {loading && (
         <p className="text-xs text-muted-foreground mt-2">
-          Procesando {file.name}...
+          Procesando archivo...
         </p>
       )}
     </div>
