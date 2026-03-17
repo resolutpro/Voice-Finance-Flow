@@ -1,4 +1,3 @@
-// lib/db/src/schema/vendor-invoices.ts
 import {
   pgTable,
   serial,
@@ -8,6 +7,7 @@ import {
   numeric,
   date,
   pgEnum,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -15,7 +15,7 @@ import { companiesTable } from "./companies";
 import { suppliersTable } from "./suppliers";
 import { categoriesTable } from "./categories";
 
-// NUEVO: Definición estricta de estados para Facturas Recibidas (Compras)
+// Definición estricta de estados para Facturas Recibidas (Compras)
 export const vendorInvoiceStatusEnum = pgEnum("vendor_invoice_status", [
   "borrador",
   "pendiente_pago",
@@ -33,7 +33,7 @@ export const vendorInvoicesTable = pgTable("vendor_invoices", {
   supplierId: integer("supplier_id").references(() => suppliersTable.id),
   categoryId: integer("category_id").references(() => categoriesTable.id),
   invoiceNumber: text("invoice_number"),
-  status: vendorInvoiceStatusEnum("status").notNull().default("borrador"), // ACTUALIZADO al Enum
+  status: vendorInvoiceStatusEnum("status").notNull().default("borrador"),
   issueDate: date("issue_date").notNull(),
   dueDate: date("due_date"),
   subtotal: numeric("subtotal", { precision: 12, scale: 2 })
@@ -49,8 +49,9 @@ export const vendorInvoicesTable = pgTable("vendor_invoices", {
   paidAmount: numeric("paid_amount", { precision: 12, scale: 2 })
     .notNull()
     .default("0"),
-  description: text("description"), // Actúa como el concepto
-  fileUrl: text("file_url"), // NUEVO: PDF original de la factura del proveedor
+  description: text("description"), // Actúa como el concepto general
+  fileUrl: text("file_url"), // PDF original de la factura del proveedor
+  extractedData: jsonb("extracted_data"), // NUEVO: La "bolsa" donde se guardará TODO lo que Google lea extra
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -61,6 +62,23 @@ export const vendorInvoicesTable = pgTable("vendor_invoices", {
     .$onUpdate(() => new Date()),
 });
 
+// NUEVO: Tabla para las líneas de la factura (productos/servicios individuales)
+export const vendorInvoiceItemsTable = pgTable("vendor_invoice_items", {
+  id: serial("id").primaryKey(),
+  vendorInvoiceId: integer("vendor_invoice_id")
+    .notNull()
+    .references(() => vendorInvoicesTable.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  quantity: numeric("quantity", { precision: 10, scale: 2 })
+    .notNull()
+    .default("1"),
+  unitPrice: numeric("unit_price", { precision: 12, scale: 2 })
+    .notNull()
+    .default("0"),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull().default("0"),
+});
+
+// Tabla para gastos rápidos (tickets, recibos sin factura formal)
 export const expensesTable = pgTable("expenses", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id")

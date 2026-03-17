@@ -26,7 +26,9 @@ const router: IRouter = Router();
 // ============================================================================
 
 const upload = multer({ storage: multer.memoryStorage() });
-const docAiClient = new DocumentProcessorServiceClient();
+const docAiClient = new DocumentProcessorServiceClient({
+  apiEndpoint: "eu-documentai.googleapis.com", // Forzamos la zona europea
+});
 
 router.post(
   "/vendor-invoices/parse",
@@ -41,23 +43,12 @@ router.post(
       const file = req.file;
       const companyId = req.body.companyId;
 
-      console.log("📦 [BACKEND] Datos recibidos:");
-      console.log("   - companyId:", companyId);
-      console.log(
-        "   - file (multer):",
-        file ? `${file.originalname} (${file.size} bytes)` : "¡UNDEFINED!",
-      );
-
       if (!file) {
-        console.error(
-          "❌ [BACKEND] Error: No se adjuntó archivo (req.file es undefined). ¿Multer falló?",
-        );
         res.status(400).json({ error: "No se subió ningún archivo PDF" });
         return;
       }
 
       if (!companyId) {
-        console.error("❌ [BACKEND] Error: No llegó el companyId en el body.");
         res.status(400).json({ error: "Falta el companyId" });
         return;
       }
@@ -66,24 +57,7 @@ router.post(
       const location = process.env.DOCUMENT_AI_LOCATION;
       const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID;
 
-      console.log("🔑 [BACKEND] Variables de Google Cloud:");
-      console.log(
-        "   - Project ID:",
-        projectId ? "✅ Configurado" : "❌ Faltante",
-      );
-      console.log(
-        "   - Location:",
-        location ? "✅ Configurado" : "❌ Faltante",
-      );
-      console.log(
-        "   - Processor ID:",
-        processorId ? "✅ Configurado" : "❌ Faltante",
-      );
-
       if (!projectId || !location || !processorId) {
-        console.error(
-          "❌ [BACKEND] Error: Faltan variables de entorno de Google Cloud.",
-        );
         res
           .status(500)
           .json({
@@ -94,9 +68,8 @@ router.post(
       }
 
       const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
-      console.log("🧠 [BACKEND] Llamando a Google Document AI...");
+      console.log("🧠 [BACKEND] Llamando a Google Document AI en Europa...");
 
-      // Llamada a la API de Google
       const [result] = await docAiClient.processDocument({
         name,
         rawDocument: {
@@ -109,9 +82,6 @@ router.post(
 
       const document = result.document;
       if (!document || !document.entities) {
-        console.warn(
-          "⚠️ [BACKEND] Advertencia: Google no devolvió 'entities'. El PDF puede ser ilegible.",
-        );
         res
           .status(400)
           .json({
@@ -121,17 +91,20 @@ router.post(
       }
 
       console.log(
-        `📊 [BACKEND] Google extrajo ${document.entities.length} entidades. Mapeando datos...`,
+        `📊 [BACKEND] Google extrajo ${document.entities.length} entidades. Estructurando datos...`,
       );
 
       let extractedData = {
         supplierName: "",
+        supplierTaxId: "",
         invoiceNumber: "",
         issueDate: null as string | null,
         dueDate: null as string | null,
         netAmount: 0,
         taxAmount: 0,
         totalAmount: 0,
+        lineItems: [] as any[], // Array de productos/servicios
+        allExtractedFields: {} as Record<string, any>, // La bolsa de datos extra
       };
 
       document.entities.forEach((entity) => {
@@ -139,9 +112,62 @@ router.post(
         const textValue =
           entity.mentionText || entity.normalizedValue?.text || "";
 
+        if (!type) return;
+
+        // === CASO ESPECIAL: LÍNEAS DE FACTURA ===
+        if (type === "line_item" && entity.properties) {
+          let line = {
+            description: textValue,
+            quantity: 1,
+            unitPrice: 0,
+            amount: 0,
+          };
+
+          entity.properties.forEach((prop) => {
+            const pType = prop.type;
+            const pText = prop.mentionText || prop.normalizedValue?.text || "";
+            if (pType.includes("description")) line.description = pText;
+            if (pType.includes("quantity"))
+              line.quantity =
+                parseFloat(pText.replace(/[^0-9.,]+/g, "").replace(",", ".")) ||
+                1;
+            if (pType.includes("unit_price"))
+              line.unitPrice =
+                parseFloat(pText.replace(/[^0-9.,]+/g, "").replace(",", ".")) ||
+                0;
+            if (pType.includes("amount"))
+              line.amount =
+                parseFloat(pText.replace(/[^0-9.,]+/g, "").replace(",", ".")) ||
+                0;
+          });
+
+          extractedData.lineItems.push(line);
+          return;
+        }
+
+        if (!textValue) return;
+
+        // === GUARDAR EN LA BOLSA DE DATOS EXTRA ===
+        if (extractedData.allExtractedFields[type]) {
+          if (Array.isArray(extractedData.allExtractedFields[type])) {
+            extractedData.allExtractedFields[type].push(textValue);
+          } else {
+            extractedData.allExtractedFields[type] = [
+              extractedData.allExtractedFields[type],
+              textValue,
+            ];
+          }
+        } else {
+          extractedData.allExtractedFields[type] = textValue;
+        }
+
+        // === ASIGNACIÓN A CAMPOS CRÍTICOS ===
         switch (type) {
           case "supplier_name":
             extractedData.supplierName = textValue;
+            break;
+          case "supplier_tax_id":
+            extractedData.supplierTaxId = textValue;
             break;
           case "invoice_id":
             extractedData.invoiceNumber = textValue;
@@ -151,30 +177,33 @@ router.post(
               ? `${entity.normalizedValue.dateValue.year}-${String(entity.normalizedValue.dateValue.month).padStart(2, "0")}-${String(entity.normalizedValue.dateValue.day).padStart(2, "0")}`
               : textValue;
             break;
+          case "due_date":
+            extractedData.dueDate = entity.normalizedValue?.dateValue
+              ? `${entity.normalizedValue.dateValue.year}-${String(entity.normalizedValue.dateValue.month).padStart(2, "0")}-${String(entity.normalizedValue.dateValue.day).padStart(2, "0")}`
+              : textValue;
+            break;
           case "net_amount":
             extractedData.netAmount = parseFloat(
-              textValue.replace(/[^0-9.-]+/g, ""),
+              textValue.replace(/[^0-9.,-]+/g, "").replace(",", "."),
             );
             break;
           case "total_tax_amount":
             extractedData.taxAmount = parseFloat(
-              textValue.replace(/[^0-9.-]+/g, ""),
+              textValue.replace(/[^0-9.,-]+/g, "").replace(",", "."),
             );
             break;
           case "total_amount":
             extractedData.totalAmount = parseFloat(
-              textValue.replace(/[^0-9.-]+/g, ""),
+              textValue.replace(/[^0-9.,-]+/g, "").replace(",", "."),
             );
             break;
         }
       });
 
-      console.log("💾 [BACKEND] Datos mapeados:", extractedData);
-
       let supplierId = null;
       if (extractedData.supplierName) {
         console.log(
-          `🔎 [BACKEND] Buscando proveedor '${extractedData.supplierName}' en BD...`,
+          `🔎 [BACKEND] Buscando proveedor '${extractedData.supplierName}' en BD para empresa ${companyId}...`,
         );
         const existingSuppliers = await db
           .select()
@@ -190,6 +219,16 @@ router.post(
         if (existingSuppliers.length > 0) {
           supplierId = existingSuppliers[0].id;
           console.log(`   - ✅ Encontrado: ID ${supplierId}`);
+          // Si no tenía CIF guardado, se lo actualizamos
+          if (
+            extractedData.supplierTaxId &&
+            existingSuppliers[0].taxId === "PENDIENTE"
+          ) {
+            await db
+              .update(suppliersTable)
+              .set({ taxId: extractedData.supplierTaxId })
+              .where(eq(suppliersTable.id, supplierId));
+          }
         } else {
           console.log("   - ❌ No encontrado. Creando nuevo proveedor...");
           const [newSupplier] = await db
@@ -197,6 +236,10 @@ router.post(
             .values({
               companyId: parseInt(companyId),
               name: extractedData.supplierName,
+              taxId: extractedData.supplierTaxId || "PENDIENTE",
+              address: "Pendiente de actualizar",
+              city: "Pendiente",
+              postalCode: "00000",
             })
             .returning();
           supplierId = newSupplier.id;
@@ -204,7 +247,6 @@ router.post(
         }
       }
 
-      console.log("📤 [BACKEND] Enviando respuesta de éxito al Frontend.");
       res.json({
         success: true,
         message: "Factura analizada",
@@ -212,13 +254,12 @@ router.post(
       });
       console.log("=======================================================\n");
     } catch (error: any) {
-      console.error(
-        "❌ [BACKEND] Error CRÍTICO capturado en el bloque catch:",
-        error,
-      );
-      // Si es un error de permisos de Google, suele salir aquí
-      if (error.details) console.error("Detalles del error:", error.details);
-
+      console.error("❌ [BACKEND] Error en OCR:", error.message);
+      if (error.statusDetails && error.statusDetails.length > 0) {
+        console.error(
+          JSON.stringify(error.statusDetails[0].fieldViolations, null, 2),
+        );
+      }
       res
         .status(500)
         .json({
@@ -229,7 +270,7 @@ router.post(
 );
 
 // ============================================================================
-// 2. RUTAS CRUD ESTÁNDAR (Las que ya tenías)
+// 2. RUTAS CRUD ESTÁNDAR
 // ============================================================================
 
 router.get("/vendor-invoices", async (req, res): Promise<void> => {
@@ -243,7 +284,7 @@ router.get("/vendor-invoices", async (req, res): Promise<void> => {
   if (query.data.companyId)
     conditions.push(eq(vendorInvoicesTable.companyId, query.data.companyId));
   if (query.data.status)
-    conditions.push(eq(vendorInvoicesTable.status, query.data.status));
+    conditions.push(eq(vendorInvoicesTable.status, query.data.status as any));
 
   const invoices = await db
     .select()
@@ -296,7 +337,7 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
       supplierId: data.supplierId ?? null,
       categoryId: data.categoryId ?? null,
       invoiceNumber: data.invoiceNumber ?? null,
-      status: data.status || "pending",
+      status: (data.status as any) || "borrador",
       issueDate: data.issueDate,
       dueDate: data.dueDate ?? null,
       description: data.description ?? null,
@@ -305,6 +346,8 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
       taxRate: taxRate.toString(),
       taxAmount: taxAmount.toString(),
       total: total.toString(),
+      // Para simplificar esta etapa de integración, guardaremos el extractedData si viaja en un campo 'notes' stringificado temporal,
+      // u obviaremos su guardado crudo hasta que actualicemos tu API-ZOD
     })
     .returning();
 
@@ -390,11 +433,11 @@ router.post("/vendor-invoices/:id/payment", async (req, res): Promise<void> => {
   await db.transaction(async (tx) => {
     const newPaid = parseFloat(invoice.paidAmount) + paymentAmount;
     const total = parseFloat(invoice.total);
-    const newStatus = newPaid >= total ? "paid" : "partially_paid";
+    const newStatus = newPaid >= total ? "pagada" : "parcialmente_pagada";
 
     await tx
       .update(vendorInvoicesTable)
-      .set({ paidAmount: newPaid.toString(), status: newStatus })
+      .set({ paidAmount: newPaid.toString(), status: newStatus as any })
       .where(eq(vendorInvoicesTable.id, params.data.id));
 
     await tx.insert(cashMovementsTable).values({
