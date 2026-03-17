@@ -36,6 +36,7 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const productFileInputRef = useRef<HTMLInputElement>(null);
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
 
   // --- QUERIES ---
   const { data: companiesData, isLoading: isLoadingCompanies } =
@@ -248,6 +249,28 @@ export default function SettingsPage() {
   });
 
   // --- MANEJADORES DE SUBIDA DE ARCHIVOS ---
+  const handleLogoUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      setCompanyFormData({
+        ...companyFormData,
+        logo: base64,
+      });
+      toast({ title: "✅ Logo cargado correctamente" });
+    };
+    reader.onerror = () => {
+      toast({ title: "❌ Error al cargar el logo", variant: "destructive" });
+    };
+    reader.readAsDataURL(file);
+    if (logoFileInputRef.current) logoFileInputRef.current.value = "";
+  };
+
   const handleClientFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
@@ -584,20 +607,53 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <div className="grid gap-2">
-                    <Label>Logo URL (opcional)</Label>
-                    <Input
-                      placeholder="https://ejemplo.com/logo.png"
-                      value={companyFormData.logo}
-                      onChange={(e) =>
-                        setCompanyFormData({
-                          ...companyFormData,
-                          logo: e.target.value,
-                        })
-                      }
-                    />
+                    <Label>Logo (opcional)</Label>
+                    <div className="flex gap-2 items-center">
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        ref={logoFileInputRef}
+                        onChange={handleLogoUpload}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => logoFileInputRef.current?.click()}
+                        className="w-full"
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        {companyFormData.logo ? "Cambiar Logo" : "Seleccionar Logo"}
+                      </Button>
+                      {companyFormData.logo && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() =>
+                            setCompanyFormData({
+                              ...companyFormData,
+                              logo: "",
+                            })
+                          }
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          ✕
+                        </Button>
+                      )}
+                    </div>
+                    {companyFormData.logo && (
+                      <div className="mt-2 p-2 bg-gray-100 rounded">
+                        <img
+                          src={companyFormData.logo}
+                          alt="Logo preview"
+                          className="h-16 object-contain"
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="grid gap-2">
-                    <Label>Cuenta Bancaria (IBAN - opcional)</Label>
+                    <Label>Cuenta Bancaria (IBAN)</Label>
                     <Input
                       placeholder="ES91 2100 0418 4502 0005 1332"
                       value={companyFormData.bankAccountNumber}
@@ -607,6 +663,7 @@ export default function SettingsPage() {
                           bankAccountNumber: e.target.value,
                         })
                       }
+                      required
                     />
                   </div>
                   <Button
@@ -1221,20 +1278,53 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="grid gap-2">
-              <Label>Logo URL (opcional)</Label>
-              <Input
-                placeholder="https://ejemplo.com/logo.png"
-                value={companyFormData.logo}
-                onChange={(e) =>
-                  setCompanyFormData({
-                    ...companyFormData,
-                    logo: e.target.value,
-                  })
-                }
-              />
+              <Label>Logo (opcional)</Label>
+              <div className="flex gap-2 items-center">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  ref={logoFileInputRef}
+                  onChange={handleLogoUpload}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => logoFileInputRef.current?.click()}
+                  className="w-full"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {companyFormData.logo ? "Cambiar Logo" : "Seleccionar Logo"}
+                </Button>
+                {companyFormData.logo && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() =>
+                      setCompanyFormData({
+                        ...companyFormData,
+                        logo: "",
+                      })
+                    }
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    ✕
+                  </Button>
+                )}
+              </div>
+              {companyFormData.logo && (
+                <div className="mt-2 p-2 bg-gray-100 rounded">
+                  <img
+                    src={companyFormData.logo}
+                    alt="Logo preview"
+                    className="h-16 object-contain"
+                  />
+                </div>
+              )}
             </div>
             <div className="grid gap-2">
-              <Label>Cuenta Bancaria (IBAN - opcional)</Label>
+              <Label>Cuenta Bancaria (IBAN)</Label>
               <Input
                 placeholder="ES91 2100 0418 4502 0005 1332"
                 value={companyFormData.bankAccountNumber}
@@ -1244,6 +1334,7 @@ export default function SettingsPage() {
                     bankAccountNumber: e.target.value,
                   })
                 }
+                required
               />
             </div>
             <DialogFooter>

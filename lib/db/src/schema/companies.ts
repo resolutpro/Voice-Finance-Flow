@@ -26,7 +26,7 @@ export const companiesTable = pgTable("companies", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
-  bankAccountNumber: text("bank_account_number"), // IBAN/Cuenta
+  bankAccountNumber: text("bank_account_number").notNull(), // IBAN/Cuenta - Obligatorio
 });
 
 export const insertCompanySchema = createInsertSchema(companiesTable).omit({

@@ -988,7 +988,7 @@ components:
          themeColor:
            type: ["string", "null"]
          bankAccountNumber:
-           type: ["string", "null"]
+           type: string
          isUte:
            type: boolean
          active:
@@ -997,7 +997,7 @@ components:
            type: string
          updatedAt:
            type: string
-       required: [id, name, taxId, address, city, province, postalCode, isUte, active, createdAt, updatedAt]
+       required: [id, name, taxId, address, city, province, postalCode, bankAccountNumber, isUte, active, createdAt, updatedAt]
 
     CompanyInput:
        type: object
@@ -1027,12 +1027,12 @@ components:
          themeColor:
            type: ["string", "null"]
          bankAccountNumber:
-           type: ["string", "null"]
+           type: string
          isUte:
            type: boolean
          active:
            type: boolean
-       required: [name, taxId, address, city, province, postalCode]
+       required: [name, taxId, address, city, province, postalCode, bankAccountNumber]
 
     Client:
       type: object
