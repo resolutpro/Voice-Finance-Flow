@@ -958,6 +958,8 @@ components:
            type: ["string", "null"]
          logo:
            type: ["string", "null"]
+         themeColor:
+           type: ["string", "null"]
          isUte:
            type: boolean
          active:
@@ -993,11 +995,13 @@ components:
            type: ["string", "null"]
          logo:
            type: ["string", "null"]
+         themeColor:
+           type: ["string", "null"]
          isUte:
            type: boolean
          active:
            type: boolean
-       required: [name, taxId, address, city, province, postalCode]
+       required: []
 
     Client:
       type: object

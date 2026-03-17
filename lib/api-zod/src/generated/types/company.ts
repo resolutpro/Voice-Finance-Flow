@@ -24,6 +24,8 @@ export interface Company {
   email?: string | null;
   /** @nullable */
   logo?: string | null;
+  /** @nullable */
+  themeColor?: string | null;
   isUte: boolean;
   active: boolean;
   createdAt: string;

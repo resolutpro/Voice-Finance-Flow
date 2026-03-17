@@ -14,6 +14,7 @@ export const companiesTable = pgTable("companies", {
   country: text("country").default("ES"),
   phone: text("phone"), // Opcional
   fax: text("fax"), // NUEVO - Opcional
+  themeColor: text("theme_color").default("#000000"),
   email: text("email"),
   logo: text("logo"),
   isUte: boolean("is_ute").default(false),

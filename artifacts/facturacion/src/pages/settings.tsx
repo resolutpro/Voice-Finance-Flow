@@ -29,7 +29,116 @@ import {
 } from "@/components/ui/dialog";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { useListCompanies } from "@workspace/api-client-react";
-import { Trash2, Building2, Upload, Users, Edit2 } from "lucide-react";
+import {
+  Trash2,
+  Building2,
+  Upload,
+  Users,
+  Edit2,
+  ImageIcon,
+  Palette,
+} from "lucide-react";
+import { useCompany } from "@/hooks/use-company";
+
+// --- COMPONENTE INTERNO PARA EDITAR LOGO Y COLOR DE EMPRESA ---
+function EditCompanyDialog({
+  company,
+  onClose,
+}: {
+  company: any;
+  onClose: () => void;
+}) {
+  const [logoBase64, setLogoBase64] = useState(company?.logo || "");
+  const [themeColor, setThemeColor] = useState(
+    company?.themeColor || "#000000",
+  );
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setLogoBase64(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const updateMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await fetch(`/api/companies/${company.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Error al actualizar");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "✅ Empresa actualizada" });
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      onClose();
+    },
+    onError: () =>
+      toast({ title: "❌ Error al actualizar", variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Personalizar {company.name}</DialogTitle>
+          <DialogDescription>
+            Configura la imagen corporativa y el color de la aplicación.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-6 py-4">
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <ImageIcon className="w-4 h-4" /> Logo
+            </Label>
+            <div className="flex items-center gap-4">
+              {logoBase64 && (
+                <img
+                  src={logoBase64}
+                  className="w-12 h-12 object-contain border rounded"
+                  alt="Preview"
+                />
+              )}
+              <Input type="file" accept="image/*" onChange={handleLogoUpload} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <Palette className="w-4 h-4" /> Color Corporativo
+            </Label>
+            <div className="flex items-center gap-3">
+              <Input
+                type="color"
+                value={themeColor}
+                onChange={(e) => setThemeColor(e.target.value)}
+                className="w-14 h-10 p-1 cursor-pointer"
+              />
+              <span className="text-sm font-mono">{themeColor}</span>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={() =>
+              updateMutation.mutate({ logo: logoBase64, themeColor })
+            }
+          >
+            Guardar Cambios
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -38,11 +147,9 @@ export default function SettingsPage() {
 
   // --- QUERIES ---
   const { data: companies, isLoading: isLoadingCompanies } = useListCompanies();
-
-  // Estado para saber qué empresa está seleccionada para añadir clientes
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | "">("");
+  const [editingCompany, setEditingCompany] = useState<any>(null);
 
-  // Query para clientes (depende de la empresa seleccionada)
   const { data: clients, isLoading: isLoadingClients } = useQuery({
     queryKey: ["clients", selectedCompanyId],
     queryFn: async () => {
@@ -77,11 +184,10 @@ export default function SettingsPage() {
     fax: "",
   });
 
-  // Estado para el cliente que se está editando
   const [editingClient, setEditingClient] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // --- MUTACIONES EMPRESAS ---
+  // --- MUTACIONES ---
   const createCompanyMutation = useMutation({
     mutationFn: async (newCompany: typeof companyFormData) => {
       const res = await fetch("/api/companies", {
@@ -106,8 +212,6 @@ export default function SettingsPage() {
       });
       queryClient.invalidateQueries({ queryKey: ["companies"] });
     },
-    onError: () =>
-      toast({ title: "❌ Error al crear empresa", variant: "destructive" }),
   });
 
   const deleteCompanyMutation = useMutation({
@@ -122,7 +226,6 @@ export default function SettingsPage() {
     },
   });
 
-  // --- MUTACIONES CLIENTES ---
   const createClientMutation = useMutation({
     mutationFn: async (newClient: any) => {
       const res = await fetch("/api/clients", {
@@ -130,7 +233,6 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newClient),
       });
-      if (!res.ok) throw new Error("Error al crear cliente");
       return res.json();
     },
     onSuccess: () => {
@@ -149,19 +251,15 @@ export default function SettingsPage() {
         queryKey: ["clients", selectedCompanyId],
       });
     },
-    onError: () =>
-      toast({ title: "❌ Error al crear cliente", variant: "destructive" }),
   });
 
   const updateClientMutation = useMutation({
     mutationFn: async (updatedClient: any) => {
       const res = await fetch(`/api/clients/${updatedClient.id}`, {
-        // Asumiendo que tu API usa PUT (o PATCH) para actualizar
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedClient),
       });
-      if (!res.ok) throw new Error("Error al actualizar cliente");
       return res.json();
     },
     onSuccess: () => {
@@ -171,18 +269,11 @@ export default function SettingsPage() {
         queryKey: ["clients", selectedCompanyId],
       });
     },
-    onError: () =>
-      toast({
-        title: "❌ Error al actualizar cliente",
-        variant: "destructive",
-      }),
   });
 
   const deleteClientMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/clients/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Error al borrar");
-      return res.json();
+      await fetch(`/api/clients/${id}`, { method: "DELETE" });
     },
     onSuccess: () => {
       toast({ title: "🗑️ Cliente eliminado" });
@@ -200,75 +291,48 @@ export default function SettingsPage() {
 
   const handleCreateClient = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCompanyId) {
-      toast({
-        title: "⚠️ Selecciona una empresa primero",
+    if (!selectedCompanyId)
+      return toast({
+        title: "⚠️ Selecciona una empresa",
         variant: "destructive",
       });
-      return;
-    }
     createClientMutation.mutate({
       ...clientFormData,
       companyId: Number(selectedCompanyId),
     });
   };
 
-  const handleUpdateClient = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateClientMutation.mutate(editingClient);
-  };
-
-  // Lógica para parsear TSV/CSV
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedCompanyId) return;
-
     setIsUploading(true);
     try {
       const text = await file.text();
-      const rows = text.split("\n").filter((row) => row.trim().length > 0);
-
-      let successCount = 0;
-      let errorCount = 0;
-
+      const rows = text.split("\n").filter((r) => r.trim().length > 0);
       for (let i = 0; i < rows.length; i++) {
-        const columns = rows[i]
+        const cols = rows[i]
           .split("\t")
           .map((c) => c.trim().replace(/['"]/g, ""));
-
-        // Saltar cabecera si existe
-        if (i === 0 && columns[0].toUpperCase().includes("EMPRESA")) continue;
-
-        // Validar que tengamos al menos el nombre (columns.length >= 1 y no esté vacío)
-        if (columns.length >= 1 && columns[0]) {
-          try {
-            const res = await fetch("/api/clients", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                companyId: Number(selectedCompanyId),
-                name: columns[0] || "",
-                taxId: columns[1] || "",
-                address: columns[2] || "",
-                city: columns[3] || "",
-                province: columns[4] || "",
-                postalCode: columns[5] || "",
-                phone: columns[6] || "",
-                fax: columns[7] || "",
-              }),
-            });
-            if (res.ok) successCount++;
-            else errorCount++;
-          } catch (err) {
-            errorCount++;
-          }
+        if (i === 0 && cols[0].toUpperCase().includes("EMPRESA")) continue;
+        if (cols[0]) {
+          await fetch("/api/clients", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              companyId: Number(selectedCompanyId),
+              name: cols[0],
+              taxId: cols[1],
+              address: cols[2],
+              city: cols[3],
+              province: cols[4],
+              postalCode: cols[5],
+              phone: cols[6],
+              fax: cols[7],
+            }),
+          });
         }
       }
-
-      toast({
-        title: "Importación completada",
-        description: `${successCount} clientes creados. ${errorCount > 0 ? `${errorCount} errores.` : ""}`,
-      });
+      toast({ title: "Importación completada" });
       queryClient.invalidateQueries({
         queryKey: ["clients", selectedCompanyId],
       });
@@ -276,7 +340,6 @@ export default function SettingsPage() {
       toast({ title: "Error leyendo el archivo", variant: "destructive" });
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -284,11 +347,11 @@ export default function SettingsPage() {
     <div className="p-2 max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-          <Building2 className="w-8 h-8" />
-          Configuración
+          <Building2 className="w-8 h-8 text-primary" /> Configuración
         </h1>
         <p className="text-muted-foreground mt-2">
-          Gestiona las empresas y clientes asociados a tu cuenta.
+          Gestiona la identidad visual de tus empresas y sus carteras de
+          clientes.
         </p>
       </div>
 
@@ -302,9 +365,6 @@ export default function SettingsPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* ==============================================
-            PESTAÑA 1: EMPRESAS
-        ================================================ */}
         <TabsContent value="empresas">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-1">
@@ -312,7 +372,7 @@ export default function SettingsPage() {
                 <CardHeader>
                   <CardTitle>Añadir Empresa</CardTitle>
                   <CardDescription>
-                    Registra una nueva entidad fiscal principal.
+                    Registra una nueva entidad fiscal.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -384,45 +444,6 @@ export default function SettingsPage() {
                         />
                       </div>
                     </div>
-                    <div className="grid gap-2">
-                      <Label>Provincia *</Label>
-                      <Input
-                        value={companyFormData.province}
-                        onChange={(e) =>
-                          setCompanyFormData({
-                            ...companyFormData,
-                            province: e.target.value,
-                          })
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="grid gap-2">
-                        <Label>Teléfono</Label>
-                        <Input
-                          value={companyFormData.phone}
-                          onChange={(e) =>
-                            setCompanyFormData({
-                              ...companyFormData,
-                              phone: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Fax</Label>
-                        <Input
-                          value={companyFormData.fax}
-                          onChange={(e) =>
-                            setCompanyFormData({
-                              ...companyFormData,
-                              fax: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
                     <Button
                       type="submit"
                       className="w-full mt-2"
@@ -445,31 +466,65 @@ export default function SettingsPage() {
                 <CardContent>
                   {isLoadingCompanies ? (
                     <p>Cargando...</p>
-                  ) : companies && companies.length > 0 ? (
+                  ) : (
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead>Logo</TableHead>
                           <TableHead>Nombre</TableHead>
-                          <TableHead>CIF</TableHead>
+                          <TableHead>Color</TableHead>
                           <TableHead className="text-right">Acciones</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {companies.map((company) => (
+                        {companies?.map((company: any) => (
                           <TableRow key={company.id}>
+                            <TableCell>
+                              {company.logo ? (
+                                <img
+                                  src={company.logo}
+                                  className="w-8 h-8 object-contain rounded border"
+                                />
+                              ) : (
+                                <div className="w-8 h-8 bg-muted rounded flex items-center justify-center text-[10px]">
+                                  Sin logo
+                                </div>
+                              )}
+                            </TableCell>
                             <TableCell className="font-medium">
                               {company.name}
                             </TableCell>
-                            <TableCell>{company.taxId}</TableCell>
-                            <TableCell className="text-right">
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-4 h-4 rounded-full border shadow-sm"
+                                  style={{
+                                    backgroundColor:
+                                      company.themeColor || "#000",
+                                  }}
+                                ></div>
+                                <span className="text-xs">
+                                  {company.themeColor || "-"}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right space-x-1">
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => {
-                                  if (confirm("¿Borrar empresa?"))
-                                    deleteCompanyMutation.mutate(company.id);
-                                }}
+                                className="text-blue-500"
+                                onClick={() => setEditingCompany(company)}
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-red-500"
+                                onClick={() =>
+                                  confirm("¿Borrar?") &&
+                                  deleteCompanyMutation.mutate(company.id)
+                                }
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
@@ -478,10 +533,6 @@ export default function SettingsPage() {
                         ))}
                       </TableBody>
                     </Table>
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center py-8">
-                      No hay empresas.
-                    </p>
                   )}
                 </CardContent>
               </Card>
@@ -489,16 +540,13 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        {/* ==============================================
-            PESTAÑA 2: CLIENTES
-        ================================================ */}
         <TabsContent value="clientes">
           <div className="mb-6 max-w-md">
             <Label className="mb-2 block text-base font-semibold">
               Selecciona la empresa:
             </Label>
             <select
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary"
               value={selectedCompanyId}
               onChange={(e) =>
                 setSelectedCompanyId(
@@ -523,7 +571,6 @@ export default function SettingsPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Añadir Cliente</CardTitle>
-                    <CardDescription>Crea un cliente manual.</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <form onSubmit={handleCreateClient} className="space-y-4">
@@ -552,108 +599,21 @@ export default function SettingsPage() {
                           }
                         />
                       </div>
-                      <div className="grid gap-2">
-                        <Label>Domicilio</Label>
-                        <Input
-                          value={clientFormData.address}
-                          onChange={(e) =>
-                            setClientFormData({
-                              ...clientFormData,
-                              address: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="grid gap-2">
-                          <Label>Localidad</Label>
-                          <Input
-                            value={clientFormData.city}
-                            onChange={(e) =>
-                              setClientFormData({
-                                ...clientFormData,
-                                city: e.target.value,
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>C.P.</Label>
-                          <Input
-                            value={clientFormData.postalCode}
-                            onChange={(e) =>
-                              setClientFormData({
-                                ...clientFormData,
-                                postalCode: e.target.value,
-                              })
-                            }
-                          />
-                        </div>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Provincia</Label>
-                        <Input
-                          value={clientFormData.province}
-                          onChange={(e) =>
-                            setClientFormData({
-                              ...clientFormData,
-                              province: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="grid gap-2">
-                          <Label>Teléfono</Label>
-                          <Input
-                            value={clientFormData.phone}
-                            onChange={(e) =>
-                              setClientFormData({
-                                ...clientFormData,
-                                phone: e.target.value,
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Fax</Label>
-                          <Input
-                            value={clientFormData.fax}
-                            onChange={(e) =>
-                              setClientFormData({
-                                ...clientFormData,
-                                fax: e.target.value,
-                              })
-                            }
-                          />
-                        </div>
-                      </div>
                       <Button
                         type="submit"
                         className="w-full mt-2"
                         disabled={createClientMutation.isPending}
                       >
-                        {createClientMutation.isPending
-                          ? "Guardando..."
-                          : "Guardar Cliente"}
+                        Guardar Cliente
                       </Button>
                     </form>
                   </CardContent>
                 </Card>
-
                 <Card className="bg-secondary/30">
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
                       <Upload className="w-4 h-4" /> Importar CSV/TSV
                     </CardTitle>
-                    <CardDescription className="text-xs">
-                      Columnas separadas por Tabulación (Tab):
-                      <br />
-                      <span className="font-mono bg-background px-1 rounded">
-                        EMPRESA | CIF | DOMICILIO | LOCALIDAD | PROVINCIA | C.P.
-                        | TLF | FAX
-                      </span>
-                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <Input
@@ -662,71 +622,41 @@ export default function SettingsPage() {
                       ref={fileInputRef}
                       onChange={handleFileUpload}
                       disabled={isUploading}
-                      className="cursor-pointer"
                     />
-                    {isUploading && (
-                      <p className="text-xs text-primary mt-2 animate-pulse">
-                        Procesando archivo...
-                      </p>
-                    )}
                   </CardContent>
                 </Card>
               </div>
-
               <div className="lg:col-span-2">
                 <Card className="h-full">
                   <CardHeader>
-                    <CardTitle>Clientes de la empresa</CardTitle>
+                    <CardTitle>Clientes registrados</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {isLoadingClients ? (
                       <p>Cargando clientes...</p>
-                    ) : clients && clients.length > 0 ? (
+                    ) : (
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Empresa / Nombre</TableHead>
+                            <TableHead>Nombre</TableHead>
                             <TableHead>CIF</TableHead>
-                            <TableHead>Población</TableHead>
                             <TableHead className="text-right">
                               Acciones
                             </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {clients.map((client: any) => (
+                          {clients?.map((client: any) => (
                             <TableRow key={client.id}>
                               <TableCell className="font-medium">
                                 {client.name}
                               </TableCell>
-                              <TableCell>
-                                {client.taxId || (
-                                  <span className="text-muted-foreground">
-                                    -
-                                  </span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {client.city || client.province ? (
-                                  <>
-                                    {client.city}{" "}
-                                    {client.province && (
-                                      <span className="text-muted-foreground">
-                                        ({client.province})
-                                      </span>
-                                    )}
-                                  </>
-                                ) : (
-                                  <span className="text-muted-foreground">
-                                    -
-                                  </span>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right space-x-2 flex justify-end">
+                              <TableCell>{client.taxId || "-"}</TableCell>
+                              <TableCell className="text-right space-x-1">
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="text-blue-500 hover:text-blue-700 hover:bg-blue-50"
+                                  className="text-blue-500"
                                   onClick={() => setEditingClient(client)}
                                 >
                                   <Edit2 className="w-4 h-4" />
@@ -734,11 +664,11 @@ export default function SettingsPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                  onClick={() => {
-                                    if (confirm("¿Borrar cliente?"))
-                                      deleteClientMutation.mutate(client.id);
-                                  }}
+                                  className="text-red-500"
+                                  onClick={() =>
+                                    confirm("¿Borrar?") &&
+                                    deleteClientMutation.mutate(client.id)
+                                  }
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
@@ -747,44 +677,45 @@ export default function SettingsPage() {
                           ))}
                         </TableBody>
                       </Table>
-                    ) : (
-                      <p className="text-sm text-muted-foreground text-center py-8">
-                        Esta empresa no tiene clientes. Crea uno o importa un
-                        archivo.
-                      </p>
                     )}
                   </CardContent>
                 </Card>
               </div>
             </div>
           ) : (
-            <div className="text-center p-12 border-2 border-dashed border-border/50 rounded-xl text-muted-foreground">
-              Selecciona una empresa en el desplegable de arriba para gestionar
-              sus clientes.
+            <div className="text-center p-12 border-2 border-dashed rounded-xl text-muted-foreground">
+              Selecciona una empresa para gestionar sus clientes.
             </div>
           )}
         </TabsContent>
       </Tabs>
 
-      {/* ==============================================
-          MODAL DE EDICIÓN DE CLIENTE
-      ================================================ */}
+      {/* MODALES */}
+      {editingCompany && (
+        <EditCompanyDialog
+          company={editingCompany}
+          onClose={() => setEditingCompany(null)}
+        />
+      )}
+
       {editingClient && (
         <Dialog
           open={!!editingClient}
-          onOpenChange={(open) => !open && setEditingClient(null)}
+          onOpenChange={() => setEditingClient(null)}
         >
-          {/* AQUÍ ESTÁ EL CAMBIO: Añadimos max-h-[85vh] y overflow-y-auto */}
           <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Editar Cliente</DialogTitle>
-              <DialogDescription>
-                Modifica los datos del cliente seleccionado.
-              </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleUpdateClient} className="space-y-4 mt-2">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                updateClientMutation.mutate(editingClient);
+              }}
+              className="space-y-4"
+            >
               <div className="grid gap-2">
-                <Label>Nombre (EMPRESA) *</Label>
+                <Label>Nombre *</Label>
                 <Input
                   value={editingClient.name}
                   onChange={(e) =>
@@ -794,7 +725,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label>NIF / CIF</Label>
+                <Label>CIF</Label>
                 <Input
                   value={editingClient.taxId || ""}
                   onChange={(e) =>
@@ -805,95 +736,15 @@ export default function SettingsPage() {
                   }
                 />
               </div>
-              <div className="grid gap-2">
-                <Label>Domicilio</Label>
-                <Input
-                  value={editingClient.address || ""}
-                  onChange={(e) =>
-                    setEditingClient({
-                      ...editingClient,
-                      address: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Localidad</Label>
-                  <Input
-                    value={editingClient.city || ""}
-                    onChange={(e) =>
-                      setEditingClient({
-                        ...editingClient,
-                        city: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>C.P.</Label>
-                  <Input
-                    value={editingClient.postalCode || ""}
-                    onChange={(e) =>
-                      setEditingClient({
-                        ...editingClient,
-                        postalCode: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label>Provincia</Label>
-                <Input
-                  value={editingClient.province || ""}
-                  onChange={(e) =>
-                    setEditingClient({
-                      ...editingClient,
-                      province: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Teléfono</Label>
-                  <Input
-                    value={editingClient.phone || ""}
-                    onChange={(e) =>
-                      setEditingClient({
-                        ...editingClient,
-                        phone: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Fax</Label>
-                  <Input
-                    value={editingClient.fax || ""}
-                    onChange={(e) =>
-                      setEditingClient({
-                        ...editingClient,
-                        fax: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-              <DialogFooter className="pt-4">
+              <DialogFooter>
                 <Button
-                  type="button"
                   variant="outline"
+                  type="button"
                   onClick={() => setEditingClient(null)}
                 >
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={updateClientMutation.isPending}>
-                  {updateClientMutation.isPending
-                    ? "Guardando..."
-                    : "Guardar Cambios"}
-                </Button>
+                <Button type="submit">Guardar Cambios</Button>
               </DialogFooter>
             </form>
           </DialogContent>

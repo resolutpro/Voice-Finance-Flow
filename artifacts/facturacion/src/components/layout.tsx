@@ -1,3 +1,4 @@
+// src/components/layout.tsx
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
@@ -10,12 +11,8 @@ import {
   Building2,
   Bell,
   Menu,
-  Settings,
-  LogOut,
 } from "lucide-react";
-
 import { useCompany } from "@/hooks/use-company";
-import { useAuth } from "@/hooks/use-auth";
 import { useListCompanies, useSeedData } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { VoiceAssistant } from "./voice-assistant";
@@ -23,16 +20,6 @@ import { Select } from "./shared-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-
-// Menú lateral izquierdo (Sidebar)
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/invoices", label: "Facturas", icon: FileText },
@@ -40,7 +27,8 @@ const navItems = [
   { href: "/treasury", label: "Tesorería", icon: Landmark },
   { href: "/forecast", label: "Previsión", icon: TrendingUp },
   { href: "/tasks", label: "Tareas", icon: CheckSquare },
-  { href: "/settings", label: "Configuración", icon: Settings }, // <-- Configuración añadida aquí
+  // Asegúrate de tener el enlace a settings
+  { href: "/settings", label: "Configuración", icon: Building2 },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -50,8 +38,6 @@ export function Layout({ children }: { children: ReactNode }) {
   const seedMutation = useSeedData();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-
-  const { logout } = useAuth();
 
   const handleSeed = () => {
     seedMutation.mutate(undefined, {
@@ -65,15 +51,38 @@ export function Layout({ children }: { children: ReactNode }) {
     });
   };
 
+  // 1. Buscamos la empresa activa
+  const activeCompany = companies?.find((c) => c.id === activeCompanyId);
+
+  // 2. Extraemos sus propiedades estéticas (manejando el caso en que no exista)
+  const dynamicLogo = activeCompany?.logo || null;
+  const dynamicColor = (activeCompany as any)?.themeColor || undefined; // Color por defecto si es undefined
+
   return (
     <div className="min-h-screen bg-background flex flex-col md:flex-row">
       {/* Sidebar - Hidden on small screens, full height on md+ */}
       <aside className="w-full md:w-64 bg-card border-r border-border flex-shrink-0 md:h-screen md:sticky md:top-0 z-10 hidden md:flex flex-col">
         <div className="h-16 flex items-center px-6 border-b border-border/50">
-          <div className="flex items-center gap-2 text-primary">
-            <Landmark className="w-6 h-6" />
-            <span className="font-display font-bold text-xl text-foreground tracking-tight">
-              FinanzasPro
+          <div className="flex items-center gap-2">
+            {/* Si hay logo, lo mostramos, si no, mostramos el icono por defecto */}
+            {dynamicLogo ? (
+              <img
+                src={dynamicLogo}
+                alt="Logo"
+                className="w-8 h-8 object-contain"
+              />
+            ) : (
+              <Landmark
+                className="w-6 h-6"
+                style={{ color: dynamicColor || "var(--primary)" }}
+              />
+            )}
+
+            <span
+              className="font-display font-bold text-xl tracking-tight"
+              style={{ color: dynamicColor || "inherit" }}
+            >
+              {activeCompany ? activeCompany.name : "FinanzasPro"}
             </span>
           </div>
         </div>
@@ -90,15 +99,28 @@ export function Layout({ children }: { children: ReactNode }) {
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all duration-200",
                   isActive
-                    ? "bg-primary/10 text-primary"
+                    ? "bg-primary/10" // Mantenemos un fondo genérico
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                 )}
+                // Aplicamos el color del texto dinámicamente si está activo
+                style={
+                  isActive ? { color: dynamicColor || "var(--primary)" } : {}
+                }
               >
                 <item.icon className="w-5 h-5" />
                 {item.label}
               </Link>
             );
           })}
+        </div>
+
+        <div className="p-4 border-t border-border/50">
+          <button
+            onClick={handleSeed}
+            className="text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            Generar datos Demo
+          </button>
         </div>
       </aside>
 
@@ -131,12 +153,7 @@ export function Layout({ children }: { children: ReactNode }) {
                   )
                 }
               >
-                {/* Opción por defecto para cuando no hay ninguna empresa seleccionada (opcional) */}
-                <option value="" disabled>
-                  Selecciona una empresa...
-                </option>
-
-                {/* Solo mostramos las empresas de la base de datos */}
+                <option value="">Sin empresa</option>
                 {companies?.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -149,26 +166,13 @@ export function Layout({ children }: { children: ReactNode }) {
               <Bell className="w-5 h-5" />
             </button>
 
-            {/* Menú Desplegable del Avatar */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white font-semibold border-2 border-white shadow-sm hover:opacity-90 transition-opacity focus:outline-none">
-                  JS
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-
-                <DropdownMenuItem
-                  onClick={logout}
-                  className="text-red-500 focus:text-red-500 cursor-pointer flex items-center"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Cerrar Sesión</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold border-2 border-white shadow-sm"
+              // Usamos el color dinámico como fondo del avatar
+              style={{ backgroundColor: dynamicColor || "var(--primary)" }}
+            >
+              JS
+            </div>
           </div>
         </header>
 
