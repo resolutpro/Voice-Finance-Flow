@@ -83,7 +83,11 @@ export default function SettingsPage() {
     fax: "",
     logo: "",
     color: "#000000",
+    bankAccountNumber: "",
   });
+
+  const [editingCompany, setEditingCompany] = useState<any>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   const [clientFormData, setClientFormData] = useState({
     name: "",
@@ -98,6 +102,7 @@ export default function SettingsPage() {
 
   const [editingClient, setEditingClient] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isEditClientDialogOpen, setIsEditClientDialogOpen] = useState(false);
 
   // --- MUTACIONES EMPRESAS ---
   const createCompanyMutation = useMutation({
@@ -123,6 +128,7 @@ export default function SettingsPage() {
         fax: "",
         logo: "",
         color: "#000000",
+        bankAccountNumber: "",
       });
       queryClient.invalidateQueries({ queryKey: ["companies"] });
     },
@@ -140,6 +146,42 @@ export default function SettingsPage() {
       toast({ title: "🗑️ Empresa eliminada" });
       queryClient.invalidateQueries({ queryKey: ["companies"] });
     },
+  });
+
+  const updateCompanyMutation = useMutation({
+    mutationFn: async (data: {
+      id: number;
+      formData: typeof companyFormData;
+    }) => {
+      const res = await fetch(`/api/companies/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data.formData),
+      });
+      if (!res.ok) throw new Error("Error al actualizar");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "✅ Empresa actualizada" });
+      setIsEditDialogOpen(false);
+      setEditingCompany(null);
+      setCompanyFormData({
+        name: "",
+        taxId: "",
+        address: "",
+        city: "",
+        province: "",
+        postalCode: "",
+        phone: "",
+        fax: "",
+        logo: "",
+        color: "#000000",
+        bankAccountNumber: "",
+      });
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+    },
+    onError: () =>
+      toast({ title: "❌ Error al actualizar empresa", variant: "destructive" }),
   });
 
   // --- MUTACIONES CLIENTES ---
@@ -554,6 +596,19 @@ export default function SettingsPage() {
                       }
                     />
                   </div>
+                  <div className="grid gap-2">
+                    <Label>Cuenta Bancaria (IBAN - opcional)</Label>
+                    <Input
+                      placeholder="ES91 2100 0418 4502 0005 1332"
+                      value={companyFormData.bankAccountNumber}
+                      onChange={(e) =>
+                        setCompanyFormData({
+                          ...companyFormData,
+                          bankAccountNumber: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
                   <Button
                     type="submit"
                     disabled={createCompanyMutation.isPending}
@@ -598,7 +653,33 @@ export default function SettingsPage() {
                               {company.name}
                             </TableCell>
                             <TableCell>{company.taxId}</TableCell>
-                            <TableCell>
+                            <TableCell className="flex gap-2 justify-end">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-blue-500 hover:text-blue-700"
+                                onClick={() => {
+                                  setEditingCompany(company);
+                                  setCompanyFormData({
+                                    name: company.name,
+                                    taxId: company.taxId,
+                                    address: company.address,
+                                    city: company.city,
+                                    province: company.province,
+                                    postalCode: company.postalCode,
+                                    phone: company.phone || "",
+                                    fax: company.fax || "",
+                                    logo: company.logo || "",
+                                    color: company.themeColor || "#000000",
+                                    bankAccountNumber:
+                                      company.bankAccountNumber || "",
+                                  });
+                                  setIsEditDialogOpen(true);
+                                }}
+                                title="Editar"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -995,6 +1076,196 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* --- DIALOG EDITAR EMPRESA --- */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Empresa</DialogTitle>
+            <DialogDescription>
+              Modifica los datos de la empresa seleccionada.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (editingCompany) {
+                updateCompanyMutation.mutate({
+                  id: editingCompany.id,
+                  formData: companyFormData,
+                });
+              }
+            }}
+            className="space-y-4"
+          >
+            <div className="grid gap-2">
+              <Label>Nombre de la Empresa (EMPRESA)</Label>
+              <Input
+                value={companyFormData.name}
+                onChange={(e) =>
+                  setCompanyFormData({
+                    ...companyFormData,
+                    name: e.target.value,
+                  })
+                }
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>CIF/NIF</Label>
+              <Input
+                value={companyFormData.taxId}
+                onChange={(e) =>
+                  setCompanyFormData({
+                    ...companyFormData,
+                    taxId: e.target.value,
+                  })
+                }
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Domicilio</Label>
+              <Input
+                value={companyFormData.address}
+                onChange={(e) =>
+                  setCompanyFormData({
+                    ...companyFormData,
+                    address: e.target.value,
+                  })
+                }
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Localidad</Label>
+                <Input
+                  value={companyFormData.city}
+                  onChange={(e) =>
+                    setCompanyFormData({
+                      ...companyFormData,
+                      city: e.target.value,
+                    })
+                  }
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Provincia</Label>
+                <Input
+                  value={companyFormData.province}
+                  onChange={(e) =>
+                    setCompanyFormData({
+                      ...companyFormData,
+                      province: e.target.value,
+                    })
+                  }
+                  required
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Código Postal (C.P.)</Label>
+                <Input
+                  value={companyFormData.postalCode}
+                  onChange={(e) =>
+                    setCompanyFormData({
+                      ...companyFormData,
+                      postalCode: e.target.value,
+                    })
+                  }
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Teléfono (opcional)</Label>
+                <Input
+                  value={companyFormData.phone}
+                  onChange={(e) =>
+                    setCompanyFormData({
+                      ...companyFormData,
+                      phone: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Fax (opcional)</Label>
+                <Input
+                  value={companyFormData.fax}
+                  onChange={(e) =>
+                    setCompanyFormData({
+                      ...companyFormData,
+                      fax: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Color Marca</Label>
+                <Input
+                  type="color"
+                  className="h-10 cursor-pointer w-full p-1"
+                  value={companyFormData.color}
+                  onChange={(e) =>
+                    setCompanyFormData({
+                      ...companyFormData,
+                      color: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Logo URL (opcional)</Label>
+              <Input
+                placeholder="https://ejemplo.com/logo.png"
+                value={companyFormData.logo}
+                onChange={(e) =>
+                  setCompanyFormData({
+                    ...companyFormData,
+                    logo: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Cuenta Bancaria (IBAN - opcional)</Label>
+              <Input
+                placeholder="ES91 2100 0418 4502 0005 1332"
+                value={companyFormData.bankAccountNumber}
+                onChange={(e) =>
+                  setCompanyFormData({
+                    ...companyFormData,
+                    bankAccountNumber: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={updateCompanyMutation.isPending}
+              >
+                {updateCompanyMutation.isPending
+                  ? "Guardando..."
+                  : "Guardar Cambios"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

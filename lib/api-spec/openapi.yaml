@@ -987,6 +987,8 @@ components:
            type: ["string", "null"]
          themeColor:
            type: ["string", "null"]
+         bankAccountNumber:
+           type: ["string", "null"]
          isUte:
            type: boolean
          active:
@@ -1023,6 +1025,8 @@ components:
          logo:
            type: ["string", "null"]
          themeColor:
+           type: ["string", "null"]
+         bankAccountNumber:
            type: ["string", "null"]
          isUte:
            type: boolean
