@@ -113,15 +113,6 @@ export function Layout({ children }: { children: ReactNode }) {
             );
           })}
         </div>
-
-        <div className="p-4 border-t border-border/50">
-          <button
-            onClick={handleSeed}
-            className="text-xs text-muted-foreground underline hover:text-foreground"
-          >
-            Generar datos Demo
-          </button>
-        </div>
       </aside>
 
       {/* Main Content Area */}
