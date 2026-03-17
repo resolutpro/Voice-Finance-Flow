@@ -10,8 +10,30 @@ const router = Router();
 
 router.get("/:id", async (req, res) => {
   try {
-    const invoiceId = parseInt(req.params.id);
+    // --- 🚨 INICIO DE LA VALIDACIÓN 🚨 ---
+    const idParam = req.params.id;
 
+    // 1. Si el Frontend manda basura ("undefined", "NaN", etc), cortamos aquí
+    if (
+      !idParam ||
+      idParam === "undefined" ||
+      idParam === "NaN" ||
+      idParam === "null"
+    ) {
+      return res.status(400).send("ID de factura no válido o no proporcionado");
+    }
+
+    const invoiceId = parseInt(idParam, 10);
+
+    // 2. Si por algún motivo parseInt falla y devuelve NaN, cortamos aquí
+    if (Number.isNaN(invoiceId)) {
+      return res
+        .status(400)
+        .send("El ID de la factura debe ser un número entero");
+    }
+    // --- ✅ FIN DE LA VALIDACIÓN ✅ ---
+
+    // A partir de aquí, es SEGURO que invoiceId es un número válido.
     // 1. Obtener los datos completos de la factura, empresa y cliente
     const [invoice] = await db
       .select()

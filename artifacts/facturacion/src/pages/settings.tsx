@@ -271,57 +271,112 @@ export default function SettingsPage() {
     const reader = new FileReader();
 
     reader.onload = async (e) => {
-      const text = e.target?.result as string;
-      const lines = text.split("\n");
-      const productsToCreate = [];
-      let startParsing = false;
-
-      for (const line of lines) {
-        const columns = line.split("\t");
-
-        if (
-          columns[0]?.trim().toUpperCase() === "ARTICULO" &&
-          columns[1]?.trim().toUpperCase() === "PRECIO"
-        ) {
-          startParsing = true;
-          continue;
+      try {
+        const text = e.target?.result as string;
+        const lines = text.split("\n").filter((line) => line.trim());
+        
+        if (lines.length === 0) {
+          throw new Error("El archivo está vacío");
         }
 
-        if (startParsing && columns[0]?.trim()) {
-          const articulo = columns[0].trim();
-          const precio = columns[1]
-            ?.trim()
-            .replace(/\./g, "")
-            .replace(",", ".");
-          const igic = columns[2]?.trim().replace("%", "");
+        const productsToCreate = [];
+        let headerFound = false;
+        let headerLineIndex = -1;
+
+        // Find header line more flexibly
+        for (let i = 0; i < Math.min(5, lines.length); i++) {
+          const columns = lines[i].split("\t").map((c) => c.trim().toUpperCase());
+          // Look for columns that could be product name and price
+          if (
+            (columns[0]?.includes("ARTICULO") ||
+              columns[0]?.includes("NOMBRE") ||
+              columns[0]?.includes("PRODUCTO") ||
+              columns[0]?.includes("PRODUCT")) &&
+            (columns[1]?.includes("PRECIO") ||
+              columns[1]?.includes("PRICE") ||
+              columns[1]?.includes("COSTE") ||
+              columns[1]?.includes("COST"))
+          ) {
+            headerFound = true;
+            headerLineIndex = i;
+            break;
+          }
+        }
+
+        // If no clear header, assume first line is header
+        if (!headerFound && lines.length > 1) {
+          headerLineIndex = 0;
+          headerFound = true;
+        }
+
+        // Start parsing from line after header
+        const startLine = headerFound ? headerLineIndex + 1 : 0;
+
+        for (let i = startLine; i < lines.length; i++) {
+          const columns = lines[i]
+            .split("\t")
+            .map((c) => c.trim());
+
+          if (!columns[0]) continue; // Skip empty lines
+
+          // Clean and parse price
+          const priceStr = (columns[1] || "0")
+            .replace(/[€$]/g, "") // Remove currency symbols
+            .replace(/\./g, "") // Remove thousands separator
+            .replace(",", "."); // Convert decimal
+
+          const price = parseFloat(priceStr) || 0;
+          if (isNaN(price)) {
+            console.warn(`Precio inválido en fila ${i + 1}: "${columns[1]}"`);
+          }
+
+          // Parse tax rate
+          const taxStr = (columns[2] || "0").replace(/[%]/g, "").trim();
+          const taxRate = parseFloat(taxStr) || 0;
 
           productsToCreate.push({
             companyId: Number(selectedCompanyId),
-            name: articulo,
-            price: precio || "0",
-            taxRate: igic || "0",
+            name: columns[0],
+            price: price.toString(),
+            taxRate: taxRate.toString(),
             active: true,
           });
         }
-      }
 
-      try {
+        if (productsToCreate.length === 0) {
+          throw new Error(
+            "No se encontraron productos válidos en el archivo. Verifica que el archivo tenga al menos 2 columnas (Artículo y Precio)."
+          );
+        }
+
         const res = await fetch("/api/products/bulk", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(productsToCreate),
         });
 
-        if (!res.ok) throw new Error("Error en la subida masiva");
-        toast({ title: `✅ ${productsToCreate.length} productos importados` });
+        const responseData = await res.json();
+
+        if (!res.ok) {
+          throw new Error(
+            responseData.error || "Error en la subida masiva"
+          );
+        }
+
+        toast({
+          title: `✅ ${productsToCreate.length} productos importados correctamente`,
+        });
         queryClient.invalidateQueries({
           queryKey: ["products", selectedCompanyId],
         });
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Error desconocido";
         toast({
-          title: "❌ Error importando productos",
+          title: `❌ Error: ${errorMessage}`,
           variant: "destructive",
         });
+        console.error("Error importing products:", error);
       } finally {
         setIsUploading(false);
         if (productFileInputRef.current) productFileInputRef.current.value = "";
