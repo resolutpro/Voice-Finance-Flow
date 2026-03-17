@@ -1,0 +1,43 @@
+erver listening on port 8080
+Error: Failed query: insert into "clients" ("id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at") values (default, $1, $2, $3, $4, $5, default, $6, default, default, default, default, default, default, default, default, default, default) returning "id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at"
+params: 1,factura para la empresa en canal,PENDIENTE,Pendiente,Pendiente,00000
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+    at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/voice.ts:119:29)
+Error: Failed query: insert into "clients" ("id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at") values (default, $1, $2, $3, $4, $5, default, $6, default, default, default, default, default, default, default, default, default, default) returning "id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at"
+params: 1,factura para una empresa llamada caca,PENDIENTE,Pendiente,Pendiente,00000
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+    at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/voice.ts:119:29)
+Error: Failed query: insert into "clients" ("id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at") values (default, $1, $2, $3, $4, $5, default, $6, default, default, default, default, default, default, default, default, default, default) returning "id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at"
+params: 1,factura para la asociación para el,PENDIENTE,Pendiente,Pendiente,00000
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+    at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/voice.ts:119:29)
+Error: Failed query: insert into "clients" ("id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at") values (default, $1, $2, $3, $4, $5, default, $6, default, default, default, default, default, default, default, default, default, default) returning "id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at"
+params: 13,una factura para la asociación bierzo cabrera,PENDIENTE,Pendiente,Pendiente,00000
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+    at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/voice.ts:119:29)
+Error: Failed query: insert into "clients" ("id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at") values (default, $1, $2, $3, $4, $5, default, $6, default, default, default, default, default, default, default, default, default, default) returning "id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at"
+params: 13,factura para asociación virtual cabrera,PENDIENTE,Pendiente,Pendiente,00000
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+    at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/voice.ts:119:29)
+Error: Failed query: insert into "clients" ("id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at") values (default, $1, $2, $3, $4, $5, default, $6, default, default, default, default, default, default, default, default, default, default) returning "id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at"
+params: 13,para hazme,PENDIENTE,Pendiente,Pendiente,00000
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+    at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/voice.ts:119:29)
+Error: Failed query: insert into "clients" ("id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at") values (default, $1, $2, $3, $4, $5, default, $6, default, default, default, default, default, default, default, default, default, default) returning "id", "company_id", "name", "tax_id", "address", "city", "province", "postal_code", "country", "phone", "fax", "email", "contact_person", "notes", "payment_terms_days", "active", "created_at", "updated_at"
+params: 13,una factura para caca,PENDIENTE,Pendiente,Pendiente,00000
+    at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.1_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+    at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/voice.ts:119:29)

@@ -1,5 +1,11 @@
 import { Router, type IRouter } from "express";
-import { db, clientsTable, suppliersTable, invoicesTable } from "@workspace/db";
+import {
+  db,
+  clientsTable,
+  suppliersTable,
+  invoicesTable,
+  invoiceItemsTable,
+} from "@workspace/db";
 import { ParseVoiceCommandBody } from "@workspace/api-zod";
 import { ilike, and, eq } from "drizzle-orm";
 
@@ -124,6 +130,7 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
             taxId: "PENDIENTE",
             address: "Pendiente",
             city: "Pendiente",
+            province: "Pendiente",
             postalCode: "00000",
           })
           .returning();
@@ -137,7 +144,7 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
     const taxAmount = (numAmount * taxRate) / 100;
     const total = numAmount + taxAmount;
 
-    // Crear la factura como BORRADOR en la BD
+    // Crear la factura como BORRADOR ("draft") en la BD
     const invoiceNumber = `V-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`;
     const [newInvoice] = await db
       .insert(invoicesTable)
@@ -145,9 +152,8 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
         companyId: activeCompanyId,
         clientId,
         invoiceNumber,
-        status: "borrador",
+        status: "draft",
         issueDate: new Date().toISOString().split("T")[0],
-        concept,
         subtotal: numAmount.toString(),
         taxRate: taxRate.toString(),
         taxAmount: taxAmount.toString(),
@@ -155,11 +161,20 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
       })
       .returning();
 
+    // Insertar el concepto (línea de factura) en invoice_items
+    await db.insert(invoiceItemsTable).values({
+      invoiceId: newInvoice.id,
+      description: concept,
+      quantity: "1",
+      unitPrice: numAmount.toString(),
+      amount: numAmount.toString(),
+      sortOrder: 0,
+    });
+
     res.json({
-      intent: "CREATE_INVOICE", // Actualizado para coincidir con tu sistema
+      intent: "CREATE_INVOICE",
       confidence: amount ? 0.9 : 0.6,
       entities: { clientId, clientName, amount, hasIva, concept },
-      // Texto de respuesta oral para que el asistente lo lea
       responseText: `He preparado la factura para ${clientName} por ${numAmount} euros${hasIva ? " más IVA" : ""}. Ha quedado guardada como borrador en tu panel.`,
       preview: {
         type: "invoice",
