@@ -148,7 +148,7 @@ router.get("/invoices", async (req, res): Promise<void> => {
   const overdueInvoices = await db
     .select({ id: invoicesTable.id })
     .from(invoicesTable)
-    .where(and(eq(invoicesTable.status, "issued")));
+    .where(and(eq(invoicesTable.status, "emitida")));
   for (const inv of overdueInvoices) {
     const [full] = await db
       .select()
@@ -158,13 +158,13 @@ router.get("/invoices", async (req, res): Promise<void> => {
       full &&
       full.dueDate &&
       full.dueDate < today &&
-      full.status !== "paid" &&
-      full.status !== "draft" &&
-      full.status !== "overdue"
+      full.status !== "cobrada" &&
+      full.status !== "borrador" &&
+      full.status !== "vencida"
     ) {
       await db
         .update(invoicesTable)
-        .set({ status: "overdue" })
+        .set({ status: "vencida" })
         .where(eq(invoicesTable.id, inv.id));
     }
   }
@@ -253,7 +253,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
       clientId: invoiceData.clientId ?? null,
       projectId: invoiceData.projectId ?? null,
       invoiceNumber,
-      status: invoiceData.status || "draft",
+      status: invoiceData.status || "borrador",
       issueDate: invoiceData.issueDate,
       dueDate: invoiceData.dueDate ?? null,
       notes: invoiceData.notes ?? null,
@@ -444,7 +444,7 @@ router.post("/invoices/:id/payment", async (req, res): Promise<void> => {
   await db.transaction(async (tx) => {
     const newPaid = parseFloat(invoice.paidAmount) + paymentAmount;
     const total = parseFloat(invoice.total);
-    const newStatus = newPaid >= total ? "paid" : "partially_paid";
+    const newStatus = newPaid >= total ? "cobrada" : "parcialmente_cobrada";
 
     await tx
       .update(invoicesTable)

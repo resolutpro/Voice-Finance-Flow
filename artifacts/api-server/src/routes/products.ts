@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db } from "@resolutpro/db";
-import { productsTable } from "@resolutpro/db/schema";
+import { db } from "@workspace/db";
+import { productsTable } from "@workspace/db/schema";
 
 const router = Router();
 
