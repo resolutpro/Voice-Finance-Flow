@@ -726,19 +726,20 @@ export default function InvoicesPage() {
         open={!!selectedVendorInvoice}
         onOpenChange={(open) => !open && setSelectedVendorInvoice(null)}
       >
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[550px] max-h-[85vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-2 border-b">
             <DialogTitle className="text-xl">Detalles del Gasto</DialogTitle>
           </DialogHeader>
 
           {selectedVendorInvoice && (
-            <div className="space-y-6 pt-4">
-              <div className="grid grid-cols-2 gap-y-4 gap-x-4 text-sm bg-muted/30 p-4 rounded-lg border">
+            <div className="overflow-y-auto px-6 py-6 space-y-6">
+              {/* DATOS BÁSICOS */}
+              <div className="grid grid-cols-2 gap-y-4 gap-x-4 text-sm bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/50">
                 <div>
                   <span className="text-xs text-muted-foreground block mb-1">
                     Proveedor
                   </span>
-                  <span className="font-semibold">
+                  <span className="font-semibold text-blue-900 dark:text-blue-300">
                     {selectedVendorInvoice.supplierName ||
                       `Proveedor #${selectedVendorInvoice.supplierId}`}
                   </span>
@@ -774,14 +775,100 @@ export default function InvoicesPage() {
                 </div>
               </div>
 
+              {/* LÍNEAS DE FACTURA GUARDADAS (NUEVO) */}
+              {selectedVendorInvoice.lineItems &&
+                selectedVendorInvoice.lineItems.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">
+                      Conceptos de la Factura
+                    </Label>
+                    <div className="rounded-md border bg-card overflow-hidden">
+                      <Table className="text-xs">
+                        <TableHeader className="bg-muted/30">
+                          <TableRow>
+                            <TableHead className="py-2 h-8">
+                              Descripción
+                            </TableHead>
+                            <TableHead className="py-2 h-8 text-right">
+                              Cant.
+                            </TableHead>
+                            <TableHead className="py-2 h-8 text-right">
+                              Precio
+                            </TableHead>
+                            <TableHead className="py-2 h-8 text-right">
+                              Importe
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {selectedVendorInvoice.lineItems.map(
+                            (line: any, idx: number) => (
+                              <TableRow key={idx}>
+                                <TableCell className="py-2 font-medium">
+                                  {line.description}
+                                </TableCell>
+                                <TableCell className="py-2 text-right">
+                                  {line.quantity}
+                                </TableCell>
+                                <TableCell className="py-2 text-right">
+                                  {line.unitPrice} €
+                                </TableCell>
+                                <TableCell className="py-2 text-right font-semibold">
+                                  {line.amount} €
+                                </TableCell>
+                              </TableRow>
+                            ),
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+
+              {/* INFO EXTRA / BOLSA MÁGICA OCR (NUEVO) */}
+              {selectedVendorInvoice.extractedData &&
+                Object.keys(selectedVendorInvoice.extractedData).length > 0 && (
+                  <div className="space-y-2 border-t pt-4 mt-4">
+                    <Label className="text-sm font-semibold block mb-2">
+                      Información Adicional (OCR)
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {Object.entries(selectedVendorInvoice.extractedData).map(
+                        ([key, value]) => {
+                          const displayValue = Array.isArray(value)
+                            ? value.join(" | ")
+                            : String(value);
+                          if (!displayValue.trim()) return null;
+                          return (
+                            <div
+                              key={key}
+                              className="bg-gray-50 dark:bg-zinc-900/50 p-2 rounded border"
+                            >
+                              <span className="text-[10px] text-muted-foreground font-bold block">
+                                {translateLabel(key)}
+                              </span>
+                              <span
+                                className="text-xs truncate block"
+                                title={displayValue}
+                              >
+                                {displayValue}
+                              </span>
+                            </div>
+                          );
+                        },
+                      )}
+                    </div>
+                  </div>
+                )}
+
               {/* CAMBIO DE ESTADO RÁPIDO */}
-              <div className="space-y-2 border-t pt-4">
+              <div className="space-y-2 border-t pt-4 mt-4">
                 <Label className="text-sm font-semibold">
                   Estado de la Factura
                 </Label>
                 <div className="flex gap-2 items-center">
                   <select
-                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm"
                     value={selectedVendorInvoice.status}
                     onChange={(e) =>
                       handleUpdateVendorInvoiceStatus(
@@ -804,42 +891,7 @@ export default function InvoicesPage() {
                     <Loader2 className="w-5 h-5 animate-spin text-primary" />
                   )}
                 </div>
-                <p className="text-[11px] text-muted-foreground">
-                  Al cambiar el estado, se actualizará instantáneamente en la
-                  base de datos.
-                </p>
               </div>
-
-              {/* OPCIONAL: Mostrar datos extraídos por la IA si los tiene guardados */}
-              {selectedVendorInvoice.extractedData &&
-                Object.keys(selectedVendorInvoice.extractedData).length > 0 && (
-                  <div className="mt-4">
-                    <Label className="text-xs font-semibold text-muted-foreground block mb-2">
-                      Datos extraídos (OCR)
-                    </Label>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.keys(selectedVendorInvoice.extractedData)
-                        .slice(0, 5)
-                        .map((key) => (
-                          <span
-                            key={key}
-                            className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] px-2 py-1 rounded border border-blue-100 dark:border-blue-800"
-                          >
-                            {translateLabel(key)}
-                          </span>
-                        ))}
-                      {Object.keys(selectedVendorInvoice.extractedData).length >
-                        5 && (
-                        <span className="text-[10px] text-muted-foreground py-1">
-                          +
-                          {Object.keys(selectedVendorInvoice.extractedData)
-                            .length - 5}{" "}
-                          más
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
             </div>
           )}
         </DialogContent>
