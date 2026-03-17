@@ -28,6 +28,7 @@ import type {
   ClientInput,
   Company,
   CompanyInput,
+  CreateProductsBulk201,
   DashboardData,
   DeleteInvoice200,
   DeleteTask200,
@@ -50,6 +51,7 @@ import type {
   ListTasksParams,
   ListVendorInvoicesParams,
   ParseVoiceCommandBody,
+  ProductInput,
   Project,
   ProjectInput,
   RegisterInvoicePaymentBody,
@@ -73,6 +75,92 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+/**
+ * @summary Upload multiple products
+ */
+export const getCreateProductsBulkUrl = () => {
+  return `/api/products/bulk`;
+};
+
+export const createProductsBulk = async (
+  productInput: ProductInput[],
+  options?: RequestInit,
+): Promise<CreateProductsBulk201> => {
+  return customFetch<CreateProductsBulk201>(getCreateProductsBulkUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(productInput),
+  });
+};
+
+export const getCreateProductsBulkMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProductsBulk>>,
+    TError,
+    { data: BodyType<ProductInput[]> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createProductsBulk>>,
+  TError,
+  { data: BodyType<ProductInput[]> },
+  TContext
+> => {
+  const mutationKey = ["createProductsBulk"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createProductsBulk>>,
+    { data: BodyType<ProductInput[]> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createProductsBulk(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateProductsBulkMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createProductsBulk>>
+>;
+export type CreateProductsBulkMutationBody = BodyType<ProductInput[]>;
+export type CreateProductsBulkMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Upload multiple products
+ */
+export const useCreateProductsBulk = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProductsBulk>>,
+    TError,
+    { data: BodyType<ProductInput[]> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createProductsBulk>>,
+  TError,
+  { data: BodyType<ProductInput[]> },
+  TContext
+> => {
+  return useMutation(getCreateProductsBulkMutationOptions(options));
+};
 
 /**
  * @summary Health check

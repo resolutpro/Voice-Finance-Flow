@@ -8,6 +8,18 @@
 import * as zod from "zod";
 
 /**
+ * @summary Upload multiple products
+ */
+export const CreateProductsBulkBodyItem = zod.object({
+  companyId: zod.number(),
+  name: zod.string(),
+  price: zod.string(),
+  taxRate: zod.string().nullish(),
+  active: zod.boolean().optional(),
+});
+export const CreateProductsBulkBody = zod.array(CreateProductsBulkBodyItem);
+
+/**
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -87,12 +99,12 @@ export const UpdateCompanyParams = zod.object({
 });
 
 export const UpdateCompanyBody = zod.object({
-  name: zod.string().optional(),
-  taxId: zod.string().optional(),
-  address: zod.string().optional(),
-  city: zod.string().optional(),
-  province: zod.string().optional(),
-  postalCode: zod.string().optional(),
+  name: zod.string(),
+  taxId: zod.string(),
+  address: zod.string(),
+  city: zod.string(),
+  province: zod.string(),
+  postalCode: zod.string(),
   country: zod.string().nullish(),
   phone: zod.string().nullish(),
   fax: zod.string().nullish(),

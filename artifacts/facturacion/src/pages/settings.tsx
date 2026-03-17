@@ -29,132 +29,42 @@ import {
 } from "@/components/ui/dialog";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { useListCompanies } from "@workspace/api-client-react";
-import {
-  Trash2,
-  Building2,
-  Upload,
-  Users,
-  Edit2,
-  ImageIcon,
-  Palette,
-} from "lucide-react";
-import { useCompany } from "@/hooks/use-company";
-
-// --- COMPONENTE INTERNO PARA EDITAR LOGO Y COLOR DE EMPRESA ---
-function EditCompanyDialog({
-  company,
-  onClose,
-}: {
-  company: any;
-  onClose: () => void;
-}) {
-  const [logoBase64, setLogoBase64] = useState(company?.logo || "");
-  const [themeColor, setThemeColor] = useState(
-    company?.themeColor || "#000000",
-  );
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setLogoBase64(reader.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const updateMutation = useMutation({
-    mutationFn: async (payload: any) => {
-      const res = await fetch(`/api/companies/${company.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error("Error al actualizar");
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "✅ Empresa actualizada" });
-      queryClient.invalidateQueries({ queryKey: ["companies"] });
-      onClose();
-    },
-    onError: () =>
-      toast({ title: "❌ Error al actualizar", variant: "destructive" }),
-  });
-
-  return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Personalizar {company.name}</DialogTitle>
-          <DialogDescription>
-            Configura la imagen corporativa y el color de la aplicación.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-6 py-4">
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <ImageIcon className="w-4 h-4" /> Logo
-            </Label>
-            <div className="flex items-center gap-4">
-              {logoBase64 && (
-                <img
-                  src={logoBase64}
-                  className="w-12 h-12 object-contain border rounded"
-                  alt="Preview"
-                />
-              )}
-              <Input type="file" accept="image/*" onChange={handleLogoUpload} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <Palette className="w-4 h-4" /> Color Corporativo
-            </Label>
-            <div className="flex items-center gap-3">
-              <Input
-                type="color"
-                value={themeColor}
-                onChange={(e) => setThemeColor(e.target.value)}
-                className="w-14 h-10 p-1 cursor-pointer"
-              />
-              <span className="text-sm font-mono">{themeColor}</span>
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={() =>
-              updateMutation.mutate({ logo: logoBase64, themeColor })
-            }
-          >
-            Guardar Cambios
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
+import { Trash2, Building2, Upload, Users, Edit2, Package } from "lucide-react";
 
 export default function SettingsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const productFileInputRef = useRef<HTMLInputElement>(null);
 
   // --- QUERIES ---
-  const { data: companies, isLoading: isLoadingCompanies } = useListCompanies();
-  const [selectedCompanyId, setSelectedCompanyId] = useState<number | "">("");
-  const [editingCompany, setEditingCompany] = useState<any>(null);
+  const { data: companiesData, isLoading: isLoadingCompanies } =
+    useListCompanies();
+  // Protección para asegurar que sea un array
+  const companies = Array.isArray(companiesData)
+    ? companiesData
+    : companiesData?.data || [];
 
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | "">("");
+
+  // Query clientes
   const { data: clients, isLoading: isLoadingClients } = useQuery({
     queryKey: ["clients", selectedCompanyId],
     queryFn: async () => {
       if (!selectedCompanyId) return [];
       const res = await fetch(`/api/clients?companyId=${selectedCompanyId}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedCompanyId,
+  });
+
+  // Query productos
+  const { data: products, isLoading: isLoadingProducts } = useQuery({
+    queryKey: ["products", selectedCompanyId],
+    queryFn: async () => {
+      if (!selectedCompanyId) return [];
+      const res = await fetch(`/api/products?companyId=${selectedCompanyId}`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -171,6 +81,8 @@ export default function SettingsPage() {
     postalCode: "",
     phone: "",
     fax: "",
+    logo: "",
+    color: "#000000",
   });
 
   const [clientFormData, setClientFormData] = useState({
@@ -187,7 +99,7 @@ export default function SettingsPage() {
   const [editingClient, setEditingClient] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // --- MUTACIONES ---
+  // --- MUTACIONES EMPRESAS ---
   const createCompanyMutation = useMutation({
     mutationFn: async (newCompany: typeof companyFormData) => {
       const res = await fetch("/api/companies", {
@@ -209,9 +121,13 @@ export default function SettingsPage() {
         postalCode: "",
         phone: "",
         fax: "",
+        logo: "",
+        color: "#000000",
       });
       queryClient.invalidateQueries({ queryKey: ["companies"] });
     },
+    onError: () =>
+      toast({ title: "❌ Error al crear empresa", variant: "destructive" }),
   });
 
   const deleteCompanyMutation = useMutation({
@@ -226,13 +142,18 @@ export default function SettingsPage() {
     },
   });
 
+  // --- MUTACIONES CLIENTES ---
   const createClientMutation = useMutation({
-    mutationFn: async (newClient: any) => {
+    mutationFn: async (newClient: typeof clientFormData) => {
       const res = await fetch("/api/clients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newClient),
+        body: JSON.stringify({
+          ...newClient,
+          companyId: Number(selectedCompanyId),
+        }),
       });
+      if (!res.ok) throw new Error("Error al crear cliente");
       return res.json();
     },
     onSuccess: () => {
@@ -251,29 +172,15 @@ export default function SettingsPage() {
         queryKey: ["clients", selectedCompanyId],
       });
     },
-  });
-
-  const updateClientMutation = useMutation({
-    mutationFn: async (updatedClient: any) => {
-      const res = await fetch(`/api/clients/${updatedClient.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updatedClient),
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "✅ Cliente actualizado" });
-      setEditingClient(null);
-      queryClient.invalidateQueries({
-        queryKey: ["clients", selectedCompanyId],
-      });
-    },
+    onError: () =>
+      toast({ title: "❌ Error al crear cliente", variant: "destructive" }),
   });
 
   const deleteClientMutation = useMutation({
     mutationFn: async (id: number) => {
-      await fetch(`/api/clients/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/clients/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Error al borrar");
+      return res.json();
     },
     onSuccess: () => {
       toast({ title: "🗑️ Cliente eliminado" });
@@ -283,473 +190,756 @@ export default function SettingsPage() {
     },
   });
 
-  // --- HANDLERS ---
-  const handleCreateCompany = (e: React.FormEvent) => {
-    e.preventDefault();
-    createCompanyMutation.mutate(companyFormData);
-  };
-
-  const handleCreateClient = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCompanyId)
-      return toast({
-        title: "⚠️ Selecciona una empresa",
-        variant: "destructive",
+  // --- MUTACIONES PRODUCTOS ---
+  const deleteProductMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/products/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Error al borrar");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "🗑️ Producto eliminado" });
+      queryClient.invalidateQueries({
+        queryKey: ["products", selectedCompanyId],
       });
-    createClientMutation.mutate({
-      ...clientFormData,
-      companyId: Number(selectedCompanyId),
-    });
-  };
+    },
+  });
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // --- MANEJADORES DE SUBIDA DE ARCHIVOS ---
+  const handleClientFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
     if (!file || !selectedCompanyId) return;
+
     setIsUploading(true);
-    try {
-      const text = await file.text();
-      const rows = text.split("\n").filter((r) => r.trim().length > 0);
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      const rows = text.split("\n");
+      let count = 0;
+
       for (let i = 0; i < rows.length; i++) {
-        const cols = rows[i]
+        if (!rows[i].trim()) continue;
+        const columns = rows[i]
           .split("\t")
           .map((c) => c.trim().replace(/['"]/g, ""));
-        if (i === 0 && cols[0].toUpperCase().includes("EMPRESA")) continue;
-        if (cols[0]) {
-          await fetch("/api/clients", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              companyId: Number(selectedCompanyId),
-              name: cols[0],
-              taxId: cols[1],
-              address: cols[2],
-              city: cols[3],
-              province: cols[4],
-              postalCode: cols[5],
-              phone: cols[6],
-              fax: cols[7],
-            }),
-          });
+
+        if (i === 0 && columns[0].toUpperCase().includes("EMPRESA")) continue;
+
+        if (columns.length >= 1 && columns[0]) {
+          try {
+            await fetch("/api/clients", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                companyId: Number(selectedCompanyId),
+                name: columns[0],
+                taxId: columns[1] || "",
+                address: columns[2] || "",
+                city: columns[3] || "",
+                province: columns[4] || "",
+                postalCode: columns[5] || "",
+                phone: columns[6] || "",
+                fax: columns[7] || "",
+              }),
+            });
+            count++;
+          } catch (error) {
+            console.error("Error en fila", i, error);
+          }
         }
       }
-      toast({ title: "Importación completada" });
+      toast({ title: `✅ ${count} clientes importados correctamente` });
       queryClient.invalidateQueries({
         queryKey: ["clients", selectedCompanyId],
       });
-    } catch (err) {
-      toast({ title: "Error leyendo el archivo", variant: "destructive" });
-    } finally {
       setIsUploading(false);
-    }
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    };
+    reader.readAsText(file);
+  };
+
+  const handleProductFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedCompanyId) return;
+
+    setIsUploading(true);
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      const lines = text.split("\n");
+      const productsToCreate = [];
+      let startParsing = false;
+
+      for (const line of lines) {
+        const columns = line.split("\t");
+
+        if (
+          columns[0]?.trim().toUpperCase() === "ARTICULO" &&
+          columns[1]?.trim().toUpperCase() === "PRECIO"
+        ) {
+          startParsing = true;
+          continue;
+        }
+
+        if (startParsing && columns[0]?.trim()) {
+          const articulo = columns[0].trim();
+          const precio = columns[1]
+            ?.trim()
+            .replace(/\./g, "")
+            .replace(",", ".");
+          const igic = columns[2]?.trim().replace("%", "");
+
+          productsToCreate.push({
+            companyId: Number(selectedCompanyId),
+            name: articulo,
+            price: precio || "0",
+            taxRate: igic || "0",
+            active: true,
+          });
+        }
+      }
+
+      try {
+        const res = await fetch("/api/products/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(productsToCreate),
+        });
+
+        if (!res.ok) throw new Error("Error en la subida masiva");
+        toast({ title: `✅ ${productsToCreate.length} productos importados` });
+        queryClient.invalidateQueries({
+          queryKey: ["products", selectedCompanyId],
+        });
+      } catch (error) {
+        toast({
+          title: "❌ Error importando productos",
+          variant: "destructive",
+        });
+      } finally {
+        setIsUploading(false);
+        if (productFileInputRef.current) productFileInputRef.current.value = "";
+      }
+    };
+    reader.readAsText(file);
   };
 
   return (
-    <div className="p-2 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-          <Building2 className="w-8 h-8 text-primary" /> Configuración
-        </h1>
-        <p className="text-muted-foreground mt-2">
-          Gestiona la identidad visual de tus empresas y sus carteras de
-          clientes.
-        </p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold tracking-tight">Configuración</h1>
       </div>
 
       <Tabs defaultValue="empresas" className="w-full">
-        <TabsList className="mb-6 grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="empresas" className="flex gap-2">
-            <Building2 className="w-4 h-4" /> Empresas
-          </TabsTrigger>
-          <TabsTrigger value="clientes" className="flex gap-2">
-            <Users className="w-4 h-4" /> Clientes
-          </TabsTrigger>
+        <TabsList>
+          <TabsTrigger value="empresas">Empresas</TabsTrigger>
+          <TabsTrigger value="clientes">Clientes</TabsTrigger>
+          <TabsTrigger value="productos">Productos</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="empresas">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Añadir Empresa</CardTitle>
-                  <CardDescription>
-                    Registra una nueva entidad fiscal.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={handleCreateCompany} className="space-y-4">
+        {/* --- PESTAÑA EMPRESAS --- */}
+        <TabsContent value="empresas" className="space-y-4">
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5" />
+                  Añadir Empresa
+                </CardTitle>
+                <CardDescription>
+                  Añade las entidades o marcas con las que facturas.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    createCompanyMutation.mutate(companyFormData);
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="grid gap-2">
+                    <Label>Nombre de la Empresa (EMPRESA)</Label>
+                    <Input
+                      value={companyFormData.name}
+                      onChange={(e) =>
+                        setCompanyFormData({
+                          ...companyFormData,
+                          name: e.target.value,
+                        })
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>CIF/NIF</Label>
+                    <Input
+                      value={companyFormData.taxId}
+                      onChange={(e) =>
+                        setCompanyFormData({
+                          ...companyFormData,
+                          taxId: e.target.value,
+                        })
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Domicilio</Label>
+                    <Input
+                      value={companyFormData.address}
+                      onChange={(e) =>
+                        setCompanyFormData({
+                          ...companyFormData,
+                          address: e.target.value,
+                        })
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
-                      <Label>Razón Social *</Label>
+                      <Label>Localidad</Label>
                       <Input
-                        value={companyFormData.name}
+                        value={companyFormData.city}
                         onChange={(e) =>
                           setCompanyFormData({
                             ...companyFormData,
-                            name: e.target.value,
+                            city: e.target.value,
                           })
                         }
                         required
                       />
                     </div>
                     <div className="grid gap-2">
-                      <Label>NIF / CIF *</Label>
+                      <Label>Provincia</Label>
                       <Input
-                        value={companyFormData.taxId}
+                        value={companyFormData.province}
                         onChange={(e) =>
                           setCompanyFormData({
                             ...companyFormData,
-                            taxId: e.target.value,
+                            province: e.target.value,
+                          })
+                        }
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label>Código Postal (C.P.)</Label>
+                      <Input
+                        value={companyFormData.postalCode}
+                        onChange={(e) =>
+                          setCompanyFormData({
+                            ...companyFormData,
+                            postalCode: e.target.value,
                           })
                         }
                         required
                       />
                     </div>
                     <div className="grid gap-2">
-                      <Label>Dirección *</Label>
+                      <Label>Teléfono (opcional)</Label>
                       <Input
-                        value={companyFormData.address}
+                        value={companyFormData.phone}
                         onChange={(e) =>
                           setCompanyFormData({
                             ...companyFormData,
-                            address: e.target.value,
+                            phone: e.target.value,
                           })
                         }
-                        required
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="grid gap-2">
-                        <Label>Localidad *</Label>
-                        <Input
-                          value={companyFormData.city}
-                          onChange={(e) =>
-                            setCompanyFormData({
-                              ...companyFormData,
-                              city: e.target.value,
-                            })
-                          }
-                          required
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>C.P. *</Label>
-                        <Input
-                          value={companyFormData.postalCode}
-                          onChange={(e) =>
-                            setCompanyFormData({
-                              ...companyFormData,
-                              postalCode: e.target.value,
-                            })
-                          }
-                          required
-                        />
-                      </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label>Fax (opcional)</Label>
+                      <Input
+                        value={companyFormData.fax}
+                        onChange={(e) =>
+                          setCompanyFormData({
+                            ...companyFormData,
+                            fax: e.target.value,
+                          })
+                        }
+                      />
                     </div>
-                    <Button
-                      type="submit"
-                      className="w-full mt-2"
-                      disabled={createCompanyMutation.isPending}
-                    >
-                      {createCompanyMutation.isPending
-                        ? "Guardando..."
-                        : "Guardar Empresa"}
-                    </Button>
-                  </form>
-                </CardContent>
-              </Card>
-            </div>
+                    <div className="grid gap-2">
+                      <Label>Color Marca</Label>
+                      <Input
+                        type="color"
+                        className="h-10 cursor-pointer w-full p-1"
+                        value={companyFormData.color}
+                        onChange={(e) =>
+                          setCompanyFormData({
+                            ...companyFormData,
+                            color: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Logo URL (opcional)</Label>
+                    <Input
+                      placeholder="https://ejemplo.com/logo.png"
+                      value={companyFormData.logo}
+                      onChange={(e) =>
+                        setCompanyFormData({
+                          ...companyFormData,
+                          logo: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={createCompanyMutation.isPending}
+                    className="w-full"
+                  >
+                    {createCompanyMutation.isPending
+                      ? "Guardando..."
+                      : "Guardar Empresa"}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
 
-            <div className="lg:col-span-2">
-              <Card className="h-full">
-                <CardHeader>
-                  <CardTitle>Empresas registradas</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {isLoadingCompanies ? (
-                    <p>Cargando...</p>
-                  ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Empresas Existentes</CardTitle>
+                <CardDescription>
+                  Entidades registradas en el sistema.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingCompanies ? (
+                  <p>Cargando empresas...</p>
+                ) : companies.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No hay empresas registradas.
+                  </p>
+                ) : (
+                  <div className="rounded-md border">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Logo</TableHead>
-                          <TableHead>Nombre</TableHead>
-                          <TableHead>Color</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
+                          <TableHead>Empresa</TableHead>
+                          <TableHead>CIF/NIF</TableHead>
+                          <TableHead className="w-[80px]"></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {companies?.map((company: any) => (
+                        {companies.map((company: any) => (
                           <TableRow key={company.id}>
-                            <TableCell>
-                              {company.logo ? (
-                                <img
-                                  src={company.logo}
-                                  className="w-8 h-8 object-contain rounded border"
-                                />
-                              ) : (
-                                <div className="w-8 h-8 bg-muted rounded flex items-center justify-center text-[10px]">
-                                  Sin logo
-                                </div>
-                              )}
-                            </TableCell>
                             <TableCell className="font-medium">
                               {company.name}
                             </TableCell>
+                            <TableCell>{company.taxId}</TableCell>
                             <TableCell>
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="w-4 h-4 rounded-full border shadow-sm"
-                                  style={{
-                                    backgroundColor:
-                                      company.themeColor || "#000",
-                                  }}
-                                ></div>
-                                <span className="text-xs">
-                                  {company.themeColor || "-"}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right space-x-1">
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="text-blue-500"
-                                onClick={() => setEditingCompany(company)}
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-red-500"
+                                className="text-red-500 hover:text-red-700"
                                 onClick={() =>
-                                  confirm("¿Borrar?") &&
                                   deleteCompanyMutation.mutate(company.id)
                                 }
+                                disabled={deleteCompanyMutation.isPending}
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                             </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
 
-        <TabsContent value="clientes">
-          <div className="mb-6 max-w-md">
-            <Label className="mb-2 block text-base font-semibold">
-              Selecciona la empresa:
-            </Label>
-            <select
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary"
-              value={selectedCompanyId}
-              onChange={(e) =>
-                setSelectedCompanyId(
-                  e.target.value ? Number(e.target.value) : "",
-                )
-              }
-            >
-              <option value="" disabled>
-                -- Elige una empresa --
-              </option>
-              {companies?.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* --- PESTAÑA CLIENTES --- */}
+        <TabsContent value="clientes" className="space-y-4">
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Añadir / Importar Clientes
+                </CardTitle>
+                <CardDescription>
+                  Añade clientes a una empresa específica.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-2">
+                  <Label>1. Selecciona la Empresa a la que pertenecen</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                    value={selectedCompanyId}
+                    onChange={(e) =>
+                      setSelectedCompanyId(
+                        e.target.value === "" ? "" : Number(e.target.value),
+                      )
+                    }
+                  >
+                    <option value="">-- Seleccionar Empresa --</option>
+                    {companies.map((c: any) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-          {selectedCompanyId ? (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-1 space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Añadir Cliente</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <form onSubmit={handleCreateClient} className="space-y-4">
-                      <div className="grid gap-2">
-                        <Label>Nombre (EMPRESA) *</Label>
-                        <Input
-                          value={clientFormData.name}
-                          onChange={(e) =>
-                            setClientFormData({
-                              ...clientFormData,
-                              name: e.target.value,
-                            })
-                          }
-                          required
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>NIF / CIF</Label>
-                        <Input
-                          value={clientFormData.taxId}
-                          onChange={(e) =>
-                            setClientFormData({
-                              ...clientFormData,
-                              taxId: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                      <Button
-                        type="submit"
-                        className="w-full mt-2"
-                        disabled={createClientMutation.isPending}
-                      >
-                        Guardar Cliente
-                      </Button>
-                    </form>
-                  </CardContent>
-                </Card>
-                <Card className="bg-secondary/30">
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Upload className="w-4 h-4" /> Importar CSV/TSV
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                <div className="mt-4 pt-4 border-t">
+                  <Label className="mb-2 block">
+                    2. Importar masivamente desde TSV
+                  </Label>
+                  <div className="flex items-center gap-2">
                     <Input
                       type="file"
-                      accept=".csv, .tsv, .txt"
+                      accept=".tsv,.csv,.txt"
+                      className="hidden"
                       ref={fileInputRef}
-                      onChange={handleFileUpload}
-                      disabled={isUploading}
+                      onChange={handleClientFileUpload}
+                      disabled={!selectedCompanyId || isUploading}
                     />
-                  </CardContent>
-                </Card>
-              </div>
-              <div className="lg:col-span-2">
-                <Card className="h-full">
-                  <CardHeader>
-                    <CardTitle>Clientes registrados</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {isLoadingClients ? (
-                      <p>Cargando clientes...</p>
-                    ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Nombre</TableHead>
-                            <TableHead>CIF</TableHead>
-                            <TableHead className="text-right">
-                              Acciones
-                            </TableHead>
+                    <Button
+                      variant="outline"
+                      disabled={!selectedCompanyId || isUploading}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      {isUploading ? "Procesando..." : "Subir TSV de Clientes"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-4 border-t relative">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-background px-2 text-xs text-muted-foreground">
+                    O añadir manualmente
+                  </div>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      createClientMutation.mutate(clientFormData);
+                    }}
+                    className="space-y-4 mt-4"
+                  >
+                    <div className="grid gap-2">
+                      <Label>Cliente (EMPRESA)</Label>
+                      <Input
+                        value={clientFormData.name}
+                        onChange={(e) =>
+                          setClientFormData({
+                            ...clientFormData,
+                            name: e.target.value,
+                          })
+                        }
+                        disabled={!selectedCompanyId}
+                        required
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>CIF/NIF</Label>
+                      <Input
+                        value={clientFormData.taxId}
+                        onChange={(e) =>
+                          setClientFormData({
+                            ...clientFormData,
+                            taxId: e.target.value,
+                          })
+                        }
+                        disabled={!selectedCompanyId}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Domicilio</Label>
+                      <Input
+                        value={clientFormData.address}
+                        onChange={(e) =>
+                          setClientFormData({
+                            ...clientFormData,
+                            address: e.target.value,
+                          })
+                        }
+                        disabled={!selectedCompanyId}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label>Localidad</Label>
+                        <Input
+                          value={clientFormData.city}
+                          onChange={(e) =>
+                            setClientFormData({
+                              ...clientFormData,
+                              city: e.target.value,
+                            })
+                          }
+                          disabled={!selectedCompanyId}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Provincia</Label>
+                        <Input
+                          value={clientFormData.province}
+                          onChange={(e) =>
+                            setClientFormData({
+                              ...clientFormData,
+                              province: e.target.value,
+                            })
+                          }
+                          disabled={!selectedCompanyId}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label>Código Postal (C.P.)</Label>
+                        <Input
+                          value={clientFormData.postalCode}
+                          onChange={(e) =>
+                            setClientFormData({
+                              ...clientFormData,
+                              postalCode: e.target.value,
+                            })
+                          }
+                          disabled={!selectedCompanyId}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Teléfono</Label>
+                        <Input
+                          value={clientFormData.phone}
+                          onChange={(e) =>
+                            setClientFormData({
+                              ...clientFormData,
+                              phone: e.target.value,
+                            })
+                          }
+                          disabled={!selectedCompanyId}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Fax</Label>
+                      <Input
+                        value={clientFormData.fax}
+                        onChange={(e) =>
+                          setClientFormData({
+                            ...clientFormData,
+                            fax: e.target.value,
+                          })
+                        }
+                        disabled={!selectedCompanyId}
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      disabled={
+                        !selectedCompanyId || createClientMutation.isPending
+                      }
+                      className="w-full"
+                    >
+                      Guardar Cliente
+                    </Button>
+                  </form>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Listado de Clientes</CardTitle>
+                <CardDescription>
+                  {selectedCompanyId
+                    ? "Mostrando clientes de la empresa seleccionada"
+                    : "Selecciona una empresa para ver sus clientes"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingClients ? (
+                  <p>Cargando clientes...</p>
+                ) : clients?.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No hay clientes registrados.
+                  </p>
+                ) : (
+                  <div className="rounded-md border max-h-[600px] overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nombre</TableHead>
+                          <TableHead>CIF/NIF</TableHead>
+                          <TableHead className="w-[80px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {clients?.map((client: any) => (
+                          <TableRow key={client.id}>
+                            <TableCell className="font-medium">
+                              {client.name}
+                            </TableCell>
+                            <TableCell>{client.taxId}</TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-red-500 hover:text-red-700"
+                                onClick={() =>
+                                  deleteClientMutation.mutate(client.id)
+                                }
+                                disabled={deleteClientMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
                           </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {clients?.map((client: any) => (
-                            <TableRow key={client.id}>
-                              <TableCell className="font-medium">
-                                {client.name}
-                              </TableCell>
-                              <TableCell>{client.taxId || "-"}</TableCell>
-                              <TableCell className="text-right space-x-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-blue-500"
-                                  onClick={() => setEditingClient(client)}
-                                >
-                                  <Edit2 className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-red-500"
-                                  onClick={() =>
-                                    confirm("¿Borrar?") &&
-                                    deleteClientMutation.mutate(client.id)
-                                  }
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center p-12 border-2 border-dashed rounded-xl text-muted-foreground">
-              Selecciona una empresa para gestionar sus clientes.
-            </div>
-          )}
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* --- PESTAÑA PRODUCTOS --- */}
+        <TabsContent value="productos" className="space-y-4">
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="h-5 w-5" />
+                  Gestión de Productos
+                </CardTitle>
+                <CardDescription>
+                  Selecciona una empresa y sube el listado de productos (TSV).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-2">
+                  <Label>Empresa</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                    value={selectedCompanyId}
+                    onChange={(e) =>
+                      setSelectedCompanyId(
+                        e.target.value === "" ? "" : Number(e.target.value),
+                      )
+                    }
+                  >
+                    <option value="">-- Seleccionar Empresa --</option>
+                    {companies.map((c: any) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="mt-4 pt-4 border-t">
+                  <Label className="mb-2 block">
+                    Importar masivamente desde TSV
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="file"
+                      accept=".tsv,.csv,.txt"
+                      className="hidden"
+                      ref={productFileInputRef}
+                      onChange={handleProductFileUpload}
+                      disabled={!selectedCompanyId || isUploading}
+                    />
+                    <Button
+                      variant="outline"
+                      disabled={!selectedCompanyId || isUploading}
+                      onClick={() => productFileInputRef.current?.click()}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      {isUploading ? "Procesando..." : "Subir TSV de Productos"}
+                    </Button>
+                  </div>
+                  {!selectedCompanyId && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Selecciona una empresa primero para subir sus productos.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Listado de Productos</CardTitle>
+                <CardDescription>
+                  {selectedCompanyId
+                    ? "Productos registrados para la empresa seleccionada"
+                    : "Selecciona una empresa para ver sus productos"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingProducts ? (
+                  <p>Cargando productos...</p>
+                ) : products?.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No hay productos registrados.
+                  </p>
+                ) : (
+                  <div className="rounded-md border max-h-[400px] overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Artículo</TableHead>
+                          <TableHead>Precio</TableHead>
+                          <TableHead>IGIC (%)</TableHead>
+                          <TableHead className="w-[80px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {products?.map((prod: any) => (
+                          <TableRow key={prod.id}>
+                            <TableCell className="font-medium">
+                              {prod.name}
+                            </TableCell>
+                            <TableCell>{prod.price}€</TableCell>
+                            <TableCell>{prod.taxRate}%</TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-red-500 hover:text-red-700"
+                                onClick={() =>
+                                  deleteProductMutation.mutate(prod.id)
+                                }
+                                disabled={deleteProductMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
-
-      {/* MODALES */}
-      {editingCompany && (
-        <EditCompanyDialog
-          company={editingCompany}
-          onClose={() => setEditingCompany(null)}
-        />
-      )}
-
-      {editingClient && (
-        <Dialog
-          open={!!editingClient}
-          onOpenChange={() => setEditingClient(null)}
-        >
-          <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Editar Cliente</DialogTitle>
-            </DialogHeader>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                updateClientMutation.mutate(editingClient);
-              }}
-              className="space-y-4"
-            >
-              <div className="grid gap-2">
-                <Label>Nombre *</Label>
-                <Input
-                  value={editingClient.name}
-                  onChange={(e) =>
-                    setEditingClient({ ...editingClient, name: e.target.value })
-                  }
-                  required
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>CIF</Label>
-                <Input
-                  value={editingClient.taxId || ""}
-                  onChange={(e) =>
-                    setEditingClient({
-                      ...editingClient,
-                      taxId: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => setEditingClient(null)}
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit">Guardar Cambios</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 }

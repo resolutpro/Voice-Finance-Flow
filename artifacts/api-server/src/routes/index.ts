@@ -18,6 +18,7 @@ import invoicePdfRouter from "./invoice-pdf";
 import receivablesRouter from "./receivables";
 import payablesRouter from "./payables";
 import seedRouter from "./seed";
+import productsRouter from "./products";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(invoicePdfRouter);
 router.use(receivablesRouter);
 router.use(payablesRouter);
 router.use(seedRouter);
+router.use(productsRouter);
 
 export default router;

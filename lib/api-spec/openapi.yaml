@@ -41,6 +41,33 @@ tags:
     description: Voice command processing
 
 paths:
+  /products/bulk:
+    post:
+      operationId: createProductsBulk
+      tags: [products]
+      summary: Upload multiple products
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/ProductInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: integer
+                required: [success, count]
+
   /healthz:
     get:
       operationId: healthCheck
@@ -185,7 +212,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Client"
-
+      
   /suppliers:
     get:
       operationId: listSuppliers
@@ -1001,7 +1028,7 @@ components:
            type: boolean
          active:
            type: boolean
-       required: []
+       required: [name, taxId, address, city, province, postalCode]
 
     Client:
       type: object
@@ -1078,6 +1105,42 @@ components:
         active:
           type: boolean
       required: [companyId, name, taxId, address, city, province, postalCode]
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        price:
+          type: string
+        taxRate:
+          type: ["string", "null"]
+        active:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, companyId, name, price, active, createdAt, updatedAt]
+  
+    ProductInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        name:
+          type: string
+        price:
+          type: string
+        taxRate:
+          type: ["string", "null"]
+        active:
+          type: boolean
+      required: [companyId, name, price]
 
     Supplier:
       type: object

@@ -111,6 +111,27 @@ export interface ClientInput {
   active?: boolean;
 }
 
+export interface Product {
+  id: number;
+  companyId: number;
+  name: string;
+  price: string;
+  /** @nullable */
+  taxRate?: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProductInput {
+  companyId: number;
+  name: string;
+  price: string;
+  /** @nullable */
+  taxRate?: string | null;
+  active?: boolean;
+}
+
 export interface Supplier {
   id: number;
   companyId: number;
@@ -514,6 +535,11 @@ export interface VoiceParseResult {
   preview?: VoiceParseResultPreview;
   message: string;
 }
+
+export type CreateProductsBulk201 = {
+  success: boolean;
+  count: number;
+};
 
 export type ListClientsParams = {
   companyId?: number;

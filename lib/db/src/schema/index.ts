@@ -12,3 +12,4 @@ export * from "./document-series";
 export * from "./users";
 export * from "./receivables";
 export * from "./payables";
+export * from "./products";
