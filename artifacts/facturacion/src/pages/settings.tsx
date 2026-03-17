@@ -495,7 +495,7 @@ export default function SettingsPage() {
         <TabsContent value="clientes">
           <div className="mb-6 max-w-md">
             <Label className="mb-2 block text-base font-semibold">
-              Selecciona la empresa matriz:
+              Selecciona la empresa:
             </Label>
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

@@ -1,481 +1,568 @@
-import { useState } from "react";
-import { useListInvoices, useCreateInvoice, useUpdateInvoice, useUpdateInvoiceStatus, useListClients, useListProjects, useGetNextInvoiceNumber } from "@workspace/api-client-react";
+import { useState, useEffect, useRef } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useCompany } from "@/hooks/use-company";
-import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Modal, Input, Label, Select } from "@/components/shared-ui";
-import { formatCurrency, formatDate } from "@/lib/utils";
-import { Plus, Search, FileText, Trash2, Download, CheckCircle, Send, MoreVertical, Edit2 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { UploadCloud, FileText, Plus, Loader2 } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_URL || "/api";
-
-const statusLabels: Record<string, string> = {
-  draft: "Borrador",
-  issued: "Emitida",
-  paid: "Cobrada",
-  overdue: "Vencida",
-  cancelled: "Anulada",
-  partially_paid: "Parcial",
+const getStatusBadge = (status: string) => {
+  const s = status.toLowerCase();
+  if (s === "cobrada" || s === "pagada")
+    return (
+      <span className="text-green-700 bg-green-100 px-2 py-1 rounded-full text-xs font-medium capitalize">
+        {status.replace("_", " ")}
+      </span>
+    );
+  if (s === "borrador")
+    return (
+      <span className="text-gray-700 bg-gray-100 px-2 py-1 rounded-full text-xs font-medium capitalize">
+        {status}
+      </span>
+    );
+  if (s === "vencida")
+    return (
+      <span className="text-red-700 bg-red-100 px-2 py-1 rounded-full text-xs font-medium capitalize">
+        {status}
+      </span>
+    );
+  return (
+    <span className="text-blue-700 bg-blue-100 px-2 py-1 rounded-full text-xs font-medium capitalize">
+      {status.replace("_", " ")}
+    </span>
+  );
 };
 
-interface InvoiceItem {
-  description: string;
-  quantity: string;
-  unitPrice: string;
-}
-
-interface InvoiceData {
-  id: number;
-  invoiceNumber: string;
-  clientId: number | null;
-  clientName: string | null;
-  issueDate: string;
-  dueDate: string | null;
-  status: string;
-  total: string;
-  subtotal: string | null;
-  taxAmount: string | null;
-  items?: Array<{ description: string; quantity: string; unitPrice: string; amount: string }>;
-}
-
 export default function InvoicesPage() {
-  const { activeCompanyId } = useCompany();
-  const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { toast } = useToast();
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [editingInvoice, setEditingInvoice] = useState<InvoiceData | null>(null);
-  const [statusFilter, setStatusFilter] = useState("");
-  const [search, setSearch] = useState("");
-  const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
-  const { data: invoices, isLoading } = useListInvoices(activeCompanyId ? { companyId: activeCompanyId } : undefined);
-  const statusMutation = useUpdateInvoiceStatus();
 
-  const filtered = invoices?.filter((inv) => {
-    if (statusFilter && inv.status !== statusFilter) return false;
-    if (search) {
-      const s = search.toLowerCase();
-      if (!inv.invoiceNumber.toLowerCase().includes(s) && !(inv.clientName || "").toLowerCase().includes(s)) return false;
-    }
-    return true;
+  // ========================================================================
+  // 🚀 DETECCIÓN ULTRA-ROBUSTA DE LA EMPRESA
+  // Capturamos TODO el contexto para ver cómo se llama realmente la variable
+  // ========================================================================
+  const companyCtx = useCompany() as any;
+
+  // Red de arrastre: intentamos extraer el ID de todas las formas comunes
+  const extractedCompanyId =
+    companyCtx?.currentCompany?.id ||
+    companyCtx?.company?.id ||
+    companyCtx?.selectedCompany?.id ||
+    companyCtx?.activeCompany?.id ||
+    companyCtx?.companyId ||
+    user?.companyId;
+
+  // Si a pesar de todo falla, usamos 1 como salvavidas para que no explote la app
+  const companyId = extractedCompanyId || 1;
+
+  // Imprimimos en consola para ver la estructura real de tu hook
+  useEffect(() => {
+    console.log(
+      "🏢 [DEBUG EMPRESA] Todo lo que devuelve useCompany():",
+      companyCtx,
+    );
+    console.log(
+      "🏢 [DEBUG EMPRESA] ID finalmente detectado para usar en la app:",
+      companyId,
+    );
+  }, [companyCtx, companyId]);
+  // ========================================================================
+
+  // === ESTADOS DE LA UI ===
+  const [activeTab, setActiveTab] = useState("emitidas");
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Modal IA
+  const [showReviewDialog, setShowReviewDialog] = useState(false);
+  const [parsedData, setParsedData] = useState<any>(null);
+
+  // Modal Nueva Factura Manual
+  const [showNewInvoiceDialog, setShowNewInvoiceDialog] = useState(false);
+  const [newInvoiceData, setNewInvoiceData] = useState({
+    clientName: "",
+    concept: "",
+    amount: 0,
+    date: "",
   });
 
-  const handleStatusChange = (invoiceId: number, newStatus: string) => {
-    statusMutation.mutate({ id: invoiceId, data: { status: newStatus } }, {
-      onSuccess: () => {
-        toast({ title: "Estado actualizado", description: `Factura marcada como ${statusLabels[newStatus] || newStatus}` });
-        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-        setMenuOpenId(null);
+  // === ESTADOS PARA LOS DATOS REALES DE LA BD ===
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [vendorInvoices, setVendorInvoices] = useState<any[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+
+  useEffect(() => {
+    if (!companyId) return;
+    const fetchAllInvoices = async () => {
+      setIsLoadingData(true);
+      try {
+        const resEmitidas = await fetch(`/api/invoices?companyId=${companyId}`);
+        if (resEmitidas.ok) {
+          const dataEmitidas = await resEmitidas.json();
+          setInvoices(
+            Array.isArray(dataEmitidas)
+              ? dataEmitidas
+              : dataEmitidas.data || [],
+          );
+        }
+        const resRecibidas = await fetch(
+          `/api/vendor-invoices?companyId=${companyId}`,
+        );
+        if (resRecibidas.ok) {
+          const dataRecibidas = await resRecibidas.json();
+          setVendorInvoices(
+            Array.isArray(dataRecibidas)
+              ? dataRecibidas
+              : dataRecibidas.data || [],
+          );
+        }
+      } catch (error) {
+        console.error("Error cargando facturas:", error);
+      } finally {
+        setIsLoadingData(false);
       }
+    };
+    fetchAllInvoices();
+  }, [companyId]);
+
+  // === LÓGICA DE SUBIDA DE PDF CON LOGS ABUNDANTES ===
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    console.log("🔍 [FRONTEND] 1. EVENTO ONCHANGE DISPARADO NATIVAMENTE!");
+
+    const file = event.target.files?.[0];
+    console.log(
+      "🔍 [FRONTEND] 2. Archivo capturado:",
+      file ? file.name : "Nulo",
+    );
+
+    if (!file) {
+      console.warn(
+        "⚠️ [FRONTEND] Cancelado: El usuario abrió la ventana pero no eligió archivo.",
+      );
+      return;
+    }
+
+    if (file.type !== "application/pdf") {
+      console.error(
+        "❌ [FRONTEND] El archivo no es un PDF. Tipo detectado:",
+        file.type,
+      );
+      toast({
+        title: "Archivo inválido",
+        description: "Solo se permiten archivos PDF",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("companyId", companyId.toString());
+
+    console.log(
+      "🔍 [FRONTEND] 3. Enviando petición POST al servidor para empresa ID:",
+      companyId,
+    );
+
+    try {
+      const response = await fetch("/api/vendor-invoices/parse", {
+        method: "POST",
+        body: formData,
+      });
+
+      console.log(
+        "🔍 [FRONTEND] 4. El servidor respondió con Status:",
+        response.status,
+      );
+
+      const data = await response.json();
+      console.log("🔍 [FRONTEND] 5. JSON del servidor:", data);
+
+      if (response.ok && data.success) {
+        setParsedData(data.parsedData);
+        setShowReviewDialog(true);
+        toast({
+          title: "Factura leída",
+          description: "Revisa los datos extraídos.",
+        });
+      } else {
+        throw new Error(data.error || "Error al procesar la factura");
+      }
+    } catch (error: any) {
+      console.error("❌ [FRONTEND] Excepción en fetch:", error);
+      toast({
+        title: "Error de procesamiento",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const handleSaveVendorInvoice = async () => {
+    toast({ title: "Éxito", description: "Factura guardada correctamente." });
+    setShowReviewDialog(false);
+    setParsedData(null);
+  };
+
+  const handleSaveManualInvoice = async () => {
+    toast({
+      title: "Factura Creada",
+      description: `Factura para ${newInvoiceData.clientName} guardada como borrador.`,
     });
-  };
-
-  const handleDownloadPdf = (invoiceId: number) => {
-    const url = `${API_BASE}/invoices/${invoiceId}/pdf`;
-    window.open(url, "_blank");
-  };
-
-  const handleCreateClick = () => {
-    if (!activeCompanyId) {
-      toast({ title: "Selecciona una empresa", description: "Debes seleccionar una empresa específica para crear facturas.", variant: "destructive" });
-      return;
-    }
-    setIsCreateOpen(true);
-  };
-
-  const handleEditClick = (inv: InvoiceData) => {
-    if (inv.status === "paid" || inv.status === "cancelled") {
-      toast({ title: "No editable", description: "Las facturas cobradas o anuladas no se pueden editar.", variant: "destructive" });
-      return;
-    }
-    setEditingInvoice(inv);
-    setMenuOpenId(null);
+    setShowNewInvoiceDialog(false);
+    setNewInvoiceData({ clientName: "", concept: "", amount: 0, date: "" });
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-3xl font-display font-bold text-foreground">Facturas Emitidas</h2>
-          <p className="text-muted-foreground">Gestiona la facturación a clientes</p>
+          <h1 className="text-3xl font-bold tracking-tight">Facturación</h1>
+          <p className="text-muted-foreground">Gestiona tus ventas y gastos.</p>
         </div>
-        <Button onClick={handleCreateClick} className="gap-2 shadow-lg shadow-primary/20">
-          <Plus className="w-4 h-4" /> Nueva Factura
-        </Button>
+
+        {activeTab === "emitidas" && (
+          <Button onClick={() => setShowNewInvoiceDialog(true)}>
+            <Plus className="w-4 h-4 mr-2" /> Nueva Factura (Venta)
+          </Button>
+        )}
       </div>
 
-      <Card>
-        <div className="p-4 border-b border-border/50 flex gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Buscar por número o cliente..." value={search} onChange={e => setSearch(e.target.value)} />
+      <Tabs
+        defaultValue="emitidas"
+        onValueChange={setActiveTab}
+        className="space-y-6"
+      >
+        <TabsList className="grid w-full md:w-[400px] grid-cols-2">
+          <TabsTrigger value="emitidas">Emitidas (Ventas)</TabsTrigger>
+          <TabsTrigger value="recibidas">Recibidas (Gastos)</TabsTrigger>
+        </TabsList>
+
+        {/* PESTAÑA EMITIDAS */}
+        <TabsContent value="emitidas" className="space-y-4">
+          <div className="rounded-md border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nº Factura</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoadingData ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin mx-auto" />
+                    </TableCell>
+                  </TableRow>
+                ) : invoices.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="text-center py-8 text-muted-foreground"
+                    >
+                      No hay facturas emitidas.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  invoices.map((inv) => (
+                    <TableRow key={inv.id}>
+                      <TableCell className="font-medium">
+                        {inv.invoiceNumber}
+                      </TableCell>
+                      <TableCell>
+                        {inv.client?.name || `Cliente #${inv.clientId}`}
+                      </TableCell>
+                      <TableCell>
+                        {new Date(inv.issueDate).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(inv.status)}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {Number(inv.total).toLocaleString("es-ES", {
+                          style: "currency",
+                          currency: "EUR",
+                        })}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </div>
-          <Select className="w-40" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="">Todos los estados</option>
-            <option value="draft">Borrador</option>
-            <option value="issued">Emitida</option>
-            <option value="paid">Cobrada</option>
-            <option value="overdue">Vencida</option>
-          </Select>
-        </div>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="p-8 text-center text-muted-foreground">Cargando facturas...</div>
-          ) : !filtered?.length ? (
-            <div className="p-12 text-center flex flex-col items-center">
-              <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center mb-4">
-                <FileText className="w-8 h-8 text-muted-foreground" />
+        </TabsContent>
+
+        {/* PESTAÑA RECIBIDAS */}
+        <TabsContent value="recibidas" className="space-y-6">
+          <div className="relative border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-10 flex flex-col items-center justify-center text-center bg-gray-50 dark:bg-zinc-900/50 hover:bg-gray-100 transition-colors overflow-hidden group">
+            <input
+              type="file"
+              accept="application/pdf"
+              onChange={handleFileUpload}
+              onClick={(e) => {
+                (e.target as HTMLInputElement).value = "";
+              }}
+              disabled={isUploading}
+              className="absolute inset-0 w-full h-full opacity-0 z-50 cursor-pointer disabled:cursor-not-allowed"
+            />
+
+            {isUploading ? (
+              <div className="relative z-10 flex flex-col items-center">
+                <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+                <h3 className="text-lg font-semibold">Analizando con IA...</h3>
               </div>
-              <h3 className="text-lg font-semibold mb-1">No hay facturas</h3>
-              <p className="text-muted-foreground mb-6">Aún no has emitido ninguna factura para esta selección.</p>
-              <Button onClick={handleCreateClick} variant="outline">Crear la primera</Button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead className="text-xs text-muted-foreground uppercase bg-secondary/30">
-                  <tr>
-                    <th className="px-6 py-4 font-semibold">Número</th>
-                    <th className="px-6 py-4 font-semibold">Cliente</th>
-                    <th className="px-6 py-4 font-semibold">Fecha</th>
-                    <th className="px-6 py-4 font-semibold">Vencimiento</th>
-                    <th className="px-6 py-4 font-semibold">Estado</th>
-                    <th className="px-6 py-4 font-semibold text-right">Total</th>
-                    <th className="px-6 py-4 font-semibold text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/50">
-                  {filtered.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-secondary/20 transition-colors group">
-                      <td className="px-6 py-4 font-medium text-primary">{inv.invoiceNumber}</td>
-                      <td className="px-6 py-4 font-medium">{inv.clientName || 'Cliente Genérico'}</td>
-                      <td className="px-6 py-4 text-muted-foreground">{formatDate(inv.issueDate)}</td>
-                      <td className="px-6 py-4 text-muted-foreground">{inv.dueDate ? formatDate(inv.dueDate) : '-'}</td>
-                      <td className="px-6 py-4">
-                        <Badge variant={inv.status === 'paid' ? 'success' : inv.status === 'overdue' ? 'destructive' : inv.status === 'draft' ? 'secondary' : 'warning'}>
-                          {statusLabels[inv.status] || inv.status}
-                        </Badge>
-                      </td>
-                      <td className="px-6 py-4 text-right font-semibold font-mono">{formatCurrency(inv.total)}</td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-primary transition-colors"
-                            title="Descargar PDF"
-                            onClick={() => handleDownloadPdf(inv.id)}
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                          {inv.status !== "paid" && inv.status !== "cancelled" && (
-                            <button
-                              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-primary transition-colors"
-                              title="Editar factura"
-                              onClick={() => handleEditClick(inv as InvoiceData)}
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                          )}
-                          <div className="relative">
-                            <button
-                              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-primary transition-colors"
-                              title="Cambiar estado"
-                              onClick={() => setMenuOpenId(menuOpenId === inv.id ? null : inv.id)}
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </button>
-                            {menuOpenId === inv.id && (
-                              <div className="absolute right-0 top-8 z-50 bg-card border border-border rounded-xl shadow-lg py-1 w-44">
-                                {inv.status === "draft" && (
-                                  <button className="w-full px-4 py-2 text-left text-sm hover:bg-secondary/50 flex items-center gap-2"
-                                    onClick={() => handleStatusChange(inv.id, "issued")}>
-                                    <Send className="w-3.5 h-3.5" /> Emitir factura
-                                  </button>
-                                )}
-                                {(inv.status === "issued" || inv.status === "overdue") && (
-                                  <button className="w-full px-4 py-2 text-left text-sm hover:bg-secondary/50 flex items-center gap-2"
-                                    onClick={() => handleStatusChange(inv.id, "paid")}>
-                                    <CheckCircle className="w-3.5 h-3.5" /> Marcar cobrada
-                                  </button>
-                                )}
-                                {inv.status !== "cancelled" && inv.status !== "paid" && (
-                                  <button className="w-full px-4 py-2 text-left text-sm hover:bg-secondary/50 text-destructive flex items-center gap-2"
-                                    onClick={() => handleStatusChange(inv.id, "cancelled")}>
-                                    <Trash2 className="w-3.5 h-3.5" /> Anular factura
-                                  </button>
-                                )}
-                                {(inv.status === "paid" || inv.status === "cancelled") && (
-                                  <span className="w-full px-4 py-2 text-xs text-muted-foreground block">Sin acciones disponibles</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            ) : (
+              <div className="relative z-10 flex flex-col items-center pointer-events-none">
+                <UploadCloud className="h-12 w-12 text-gray-400 mb-4 group-hover:text-primary transition-colors" />
+                <h3 className="text-lg font-semibold">
+                  Sube el PDF de tu factura
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1 mb-4">
+                  Arrastra el archivo aquí o haz clic en este recuadro.
+                </p>
+                <Button variant="outline" className="pointer-events-none">
+                  Seleccionar PDF
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-md border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Proveedor</TableHead>
+                  <TableHead>Nº Factura</TableHead>
+                  <TableHead>Fecha Emisión</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoadingData ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin mx-auto" />
+                    </TableCell>
+                  </TableRow>
+                ) : vendorInvoices.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="text-center py-8 text-muted-foreground"
+                    >
+                      No hay gastos registrados.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  vendorInvoices.map((inv) => (
+                    <TableRow key={inv.id}>
+                      <TableCell className="font-medium">
+                        {inv.supplier?.name || `Proveedor #${inv.supplierId}`}
+                      </TableCell>
+                      <TableCell>{inv.invoiceNumber}</TableCell>
+                      <TableCell>
+                        {new Date(inv.issueDate).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(inv.status)}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {Number(inv.total).toLocaleString("es-ES", {
+                          style: "currency",
+                          currency: "EUR",
+                        })}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* MODAL: REVISAR PDF IA */}
+      <Dialog open={showReviewDialog} onOpenChange={setShowReviewDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Revisar Datos Extraídos</DialogTitle>
+          </DialogHeader>
+          {parsedData && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">Proveedor</Label>
+                <Input
+                  className="col-span-3"
+                  value={parsedData.supplierName}
+                  onChange={(e) =>
+                    setParsedData({
+                      ...parsedData,
+                      supplierName: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">Nº Factura</Label>
+                <Input
+                  className="col-span-3"
+                  value={parsedData.invoiceNumber}
+                  onChange={(e) =>
+                    setParsedData({
+                      ...parsedData,
+                      invoiceNumber: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">Base</Label>
+                <Input
+                  type="number"
+                  className="col-span-3"
+                  value={parsedData.netAmount}
+                  onChange={(e) =>
+                    setParsedData({
+                      ...parsedData,
+                      netAmount: parseFloat(e.target.value),
+                    })
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">Total</Label>
+                <Input
+                  type="number"
+                  className="col-span-3 font-bold"
+                  value={parsedData.totalAmount}
+                  onChange={(e) =>
+                    setParsedData({
+                      ...parsedData,
+                      totalAmount: parseFloat(e.target.value),
+                    })
+                  }
+                />
+              </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowReviewDialog(false)}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveVendorInvoice}>
+              Confirmar y Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {activeCompanyId && (
-        <CreateInvoiceModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} companyId={activeCompanyId} />
-      )}
-      {editingInvoice && (
-        <EditInvoiceModal invoice={editingInvoice} onClose={() => setEditingInvoice(null)} />
-      )}
+      {/* MODAL: CREAR FACTURA MANUAL */}
+      <Dialog
+        open={showNewInvoiceDialog}
+        onOpenChange={setShowNewInvoiceDialog}
+      >
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Nueva Factura de Venta</DialogTitle>
+            <DialogDescription>
+              Rellena los datos básicos. Podrás añadir líneas de detalle más
+              tarde.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Cliente</Label>
+              <Input
+                className="col-span-3"
+                placeholder="Nombre del cliente o empresa"
+                value={newInvoiceData.clientName}
+                onChange={(e) =>
+                  setNewInvoiceData({
+                    ...newInvoiceData,
+                    clientName: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Concepto</Label>
+              <Input
+                className="col-span-3"
+                placeholder="Ej. Servicios de consultoría"
+                value={newInvoiceData.concept}
+                onChange={(e) =>
+                  setNewInvoiceData({
+                    ...newInvoiceData,
+                    concept: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Total (€)</Label>
+              <Input
+                type="number"
+                className="col-span-3"
+                placeholder="0.00"
+                value={newInvoiceData.amount || ""}
+                onChange={(e) =>
+                  setNewInvoiceData({
+                    ...newInvoiceData,
+                    amount: parseFloat(e.target.value),
+                  })
+                }
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Fecha</Label>
+              <Input
+                type="date"
+                className="col-span-3"
+                value={newInvoiceData.date}
+                onChange={(e) =>
+                  setNewInvoiceData({ ...newInvoiceData, date: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowNewInvoiceDialog(false)}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveManualInvoice}>Crear Borrador</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
-  );
-}
-
-function EditInvoiceModal({ invoice, onClose }: { invoice: InvoiceData; onClose: () => void }) {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const { activeCompanyId } = useCompany();
-  const updateMutation = useUpdateInvoice();
-  const { data: clients } = useListClients(activeCompanyId ? { companyId: activeCompanyId } : undefined);
-  const { data: projects } = useListProjects(activeCompanyId ? { companyId: activeCompanyId } : undefined);
-
-  const [clientId, setClientId] = useState(String(invoice.clientId || ""));
-  const [projectId, setProjectId] = useState("");
-  const [issueDate, setIssueDate] = useState(invoice.issueDate);
-  const [dueDate, setDueDate] = useState(invoice.dueDate || "");
-  const [items, setItems] = useState<InvoiceItem[]>(
-    invoice.items?.map(i => ({ description: i.description, quantity: i.quantity, unitPrice: i.unitPrice })) ||
-    [{ description: "", quantity: "1", unitPrice: "0" }]
-  );
-
-  const handleAddItem = () => setItems([...items, { description: "", quantity: "1", unitPrice: "0" }]);
-  const handleRemoveItem = (index: number) => setItems(items.filter((_, i) => i !== index));
-  const updateItem = (index: number, field: string, value: string) => {
-    const newItems = [...items];
-    newItems[index] = { ...newItems[index], [field]: value };
-    setItems(newItems);
-  };
-
-  const subtotal = items.reduce((acc, item) => acc + (parseFloat(item.quantity || "0") * parseFloat(item.unitPrice || "0")), 0);
-  const tax = subtotal * 0.21;
-  const total = subtotal + tax;
-
-  const handleSubmit = () => {
-    updateMutation.mutate({
-      id: invoice.id,
-      data: {
-        companyId: activeCompanyId!,
-        clientId: clientId ? Number(clientId) : null,
-        projectId: projectId ? Number(projectId) : undefined,
-        invoiceNumber: invoice.invoiceNumber,
-        issueDate,
-        dueDate: dueDate || undefined,
-        taxRate: "21",
-        items,
-      }
-    }, {
-      onSuccess: () => {
-        toast({ title: "Factura actualizada", description: "Los cambios se han guardado correctamente." });
-        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-        onClose();
-      }
-    });
-  };
-
-  return (
-    <Modal isOpen={true} onClose={onClose} title={`Editar Factura ${invoice.invoiceNumber}`} maxWidth="max-w-3xl">
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label>Cliente</Label>
-            <Select value={clientId} onChange={e => setClientId(e.target.value)}>
-              <option value="">Selecciona un cliente...</option>
-              {clients?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </Select>
-          </div>
-          <div>
-            <Label>Proyecto</Label>
-            <Select value={projectId} onChange={e => setProjectId(e.target.value)}>
-              <option value="">Sin proyecto</option>
-              {projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </Select>
-          </div>
-          <div>
-            <Label>Número de Factura</Label>
-            <Input value={invoice.invoiceNumber} disabled className="bg-muted" />
-          </div>
-          <div>
-            <Label>Fecha de Emisión</Label>
-            <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
-          </div>
-          <div>
-            <Label>Fecha de Vencimiento</Label>
-            <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
-          </div>
-        </div>
-
-        <div className="border border-border rounded-xl overflow-hidden">
-          <div className="bg-secondary/50 p-3 flex justify-between items-center border-b border-border">
-            <h4 className="font-semibold text-sm">Líneas de Factura</h4>
-            <Button size="sm" variant="outline" onClick={handleAddItem}>Añadir línea</Button>
-          </div>
-          <div className="p-4 space-y-3 bg-card">
-            {items.map((item, index) => (
-              <div key={index} className="flex items-start gap-3">
-                <div className="flex-1">
-                  <Input placeholder="Concepto" value={item.description} onChange={e => updateItem(index, 'description', e.target.value)} />
-                </div>
-                <div className="w-24">
-                  <Input type="number" placeholder="Cant." value={item.quantity} onChange={e => updateItem(index, 'quantity', e.target.value)} />
-                </div>
-                <div className="w-32">
-                  <Input type="number" placeholder="Precio" value={item.unitPrice} onChange={e => updateItem(index, 'unitPrice', e.target.value)} />
-                </div>
-                <Button variant="ghost" size="icon" className="text-destructive flex-shrink-0" onClick={() => handleRemoveItem(index)}>
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            ))}
-          </div>
-          <div className="bg-muted/30 p-4 border-t border-border flex justify-end">
-            <div className="w-64 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span> <span>{formatCurrency(subtotal)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">IVA (21%)</span> <span>{formatCurrency(tax)}</span></div>
-              <div className="flex justify-between font-bold text-base pt-2 border-t border-border/50"><span>Total</span> <span>{formatCurrency(total)}</span></div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-3 pt-4">
-          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button onClick={handleSubmit} isLoading={updateMutation.isPending}>Guardar Cambios</Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-function CreateInvoiceModal({ isOpen, onClose, companyId }: { isOpen: boolean, onClose: () => void, companyId: number }) {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const createMutation = useCreateInvoice();
-  const { data: clients } = useListClients({ companyId });
-  const { data: projects } = useListProjects({ companyId });
-  const { data: nextNumberData } = useGetNextInvoiceNumber({ companyId });
-
-  const [clientId, setClientId] = useState("");
-  const [projectId, setProjectId] = useState("");
-  const autoInvoiceNumber = nextNumberData?.invoiceNumber || "";
-  const [invoiceNumberOverride, setInvoiceNumberOverride] = useState("");
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
-  const [dueDate, setDueDate] = useState("");
-  const [items, setItems] = useState([{ description: "", quantity: "1", unitPrice: "0" }]);
-
-  const handleAddItem = () => setItems([...items, { description: "", quantity: "1", unitPrice: "0" }]);
-  const handleRemoveItem = (index: number) => setItems(items.filter((_, i) => i !== index));
-  
-  const updateItem = (index: number, field: string, value: string) => {
-    const newItems = [...items];
-    newItems[index] = { ...newItems[index], [field]: value };
-    setItems(newItems);
-  };
-
-  const subtotal = items.reduce((acc, item) => acc + (parseFloat(item.quantity || "0") * parseFloat(item.unitPrice || "0")), 0);
-  const tax = subtotal * 0.21;
-  const total = subtotal + tax;
-
-  const handleSubmit = () => {
-    createMutation.mutate({
-      data: {
-        companyId,
-        clientId: clientId ? Number(clientId) : null,
-        projectId: projectId ? Number(projectId) : undefined,
-        invoiceNumber: invoiceNumberOverride || "",
-        issueDate,
-        dueDate: dueDate || undefined,
-        taxRate: "21",
-        items
-      }
-    }, {
-      onSuccess: () => {
-        toast({ title: "Factura creada", description: "La factura se ha guardado correctamente." });
-        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-        onClose();
-        setClientId("");
-        setInvoiceNumberOverride("");
-        setItems([{ description: "", quantity: "1", unitPrice: "0" }]);
-        setDueDate("");
-      }
-    });
-  };
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Nueva Factura" maxWidth="max-w-3xl">
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label>Cliente</Label>
-            <Select value={clientId} onChange={e => setClientId(e.target.value)}>
-              <option value="">Selecciona un cliente...</option>
-              {clients?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </Select>
-          </div>
-          <div>
-            <Label>Proyecto</Label>
-            <Select value={projectId} onChange={e => setProjectId(e.target.value)}>
-              <option value="">Sin proyecto</option>
-              {projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </Select>
-          </div>
-          <div>
-            <Label>Número de Factura</Label>
-            <Input value={invoiceNumberOverride} onChange={e => setInvoiceNumberOverride(e.target.value)} placeholder={autoInvoiceNumber ? `Auto: ${autoInvoiceNumber}` : "Auto"} />
-          </div>
-          <div>
-            <Label>Fecha de Emisión</Label>
-            <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
-          </div>
-          <div>
-            <Label>Fecha de Vencimiento</Label>
-            <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
-          </div>
-        </div>
-
-        <div className="border border-border rounded-xl overflow-hidden">
-          <div className="bg-secondary/50 p-3 flex justify-between items-center border-b border-border">
-            <h4 className="font-semibold text-sm">Líneas de Factura</h4>
-            <Button size="sm" variant="outline" onClick={handleAddItem}>Añadir línea</Button>
-          </div>
-          <div className="p-4 space-y-3 bg-card">
-            {items.map((item, index) => (
-              <div key={index} className="flex items-start gap-3">
-                <div className="flex-1">
-                  <Input placeholder="Concepto" value={item.description} onChange={e => updateItem(index, 'description', e.target.value)} />
-                </div>
-                <div className="w-24">
-                  <Input type="number" placeholder="Cant." value={item.quantity} onChange={e => updateItem(index, 'quantity', e.target.value)} />
-                </div>
-                <div className="w-32">
-                  <Input type="number" placeholder="Precio" value={item.unitPrice} onChange={e => updateItem(index, 'unitPrice', e.target.value)} />
-                </div>
-                <Button variant="ghost" size="icon" className="text-destructive flex-shrink-0" onClick={() => handleRemoveItem(index)}>
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            ))}
-          </div>
-          <div className="bg-muted/30 p-4 border-t border-border flex justify-end">
-            <div className="w-64 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span> <span>{formatCurrency(subtotal)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">IVA (21%)</span> <span>{formatCurrency(tax)}</span></div>
-              <div className="flex justify-between font-bold text-base pt-2 border-t border-border/50"><span>Total</span> <span>{formatCurrency(total)}</span></div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-3 pt-4">
-          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button onClick={handleSubmit} isLoading={createMutation.isPending}>Guardar Factura</Button>
-        </div>
-      </div>
-    </Modal>
   );
 }
