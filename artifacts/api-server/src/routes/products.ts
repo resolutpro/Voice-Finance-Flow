@@ -69,7 +69,9 @@ router.post("/products/bulk", async (req, res) => {
     }));
 
     // Check for required fields
-    const invalidProducts = validatedProducts.filter((p) => !p.name || p.companyId <= 0);
+    const invalidProducts = validatedProducts.filter(
+      (p) => !p.name || p.companyId <= 0,
+    );
     if (invalidProducts.length > 0) {
       return res.status(400).json({
         success: false,
@@ -81,7 +83,11 @@ router.post("/products/bulk", async (req, res) => {
 
     res
       .status(201)
-      .json({ success: true, count: validatedProducts.length, message: "Products imported successfully" });
+      .json({
+        success: true,
+        count: validatedProducts.length,
+        message: "Products imported successfully",
+      });
   } catch (error) {
     console.error("Error bulk inserting products:", error);
     res.status(500).json({
