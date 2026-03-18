@@ -126,6 +126,17 @@ export function Layout({ children }: { children: ReactNode }) {
             <button className="md:hidden p-2 text-muted-foreground">
               <Menu className="w-6 h-6" />
             </button>
+            <div className="w-8 h-8 rounded-lg bg-white shadow-sm border flex items-center justify-center p-0.5 shrink-0 hidden sm:flex">
+              {dynamicLogo ? (
+                <img
+                  src={dynamicLogo}
+                  alt="Logo"
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <Landmark className="w-5 h-5 text-primary" />
+              )}
+            </div>
             <h1 className="font-display font-semibold text-xl hidden sm:block text-primary truncate max-w-sm">
               {activeCompany
                 ? activeCompany.name
