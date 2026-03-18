@@ -5,13 +5,13 @@ import React, {
   ReactNode,
   useEffect,
 } from "react";
-import { Company } from "@api-zod/generated"; // Ajusta la ruta a tus tipos
+import { Company } from "@api-zod/generated";
 
 interface CompanyContextType {
   activeCompanyId: number | null;
   activeCompany: Company | null;
   setActiveCompanyId: (id: number | null) => void;
-  companies: Company[]; // Lista de empresas cargadas
+  companies: Company[];
   setCompanies: (companies: Company[]) => void;
 }
 
@@ -23,17 +23,17 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
   const activeCompany = companies.find((c) => c.id === activeCompanyId) || null;
 
-  // Efecto para inyectar el color de la empresa como variable CSS global
+  // Efecto para inyectar el color EXACTO de la empresa
   useEffect(() => {
+    const root = document.documentElement;
+
     if (activeCompany?.themeColor) {
-      // Modificamos la variable CSS principal (ajusta '--primary' según tu tema de Tailwind/shadcn)
-      document.documentElement.style.setProperty(
-        "--primary",
-        activeCompany.themeColor,
-      );
+      // Al sobreescribir '--color-primary' directamente, evitamos el problema del hsl()
+      // Tailwind v4 utilizará este HEX puro para todo, incluso para calcular fondos como bg-primary/10
+      root.style.setProperty("--color-primary", activeCompany.themeColor);
     } else {
-      // Restaurar el color por defecto si no hay empresa o no tiene color
-      document.documentElement.style.removeProperty("--primary");
+      // Restauramos el color por defecto borrando nuestra inyección
+      root.style.removeProperty("--color-primary");
     }
   }, [activeCompany]);
 

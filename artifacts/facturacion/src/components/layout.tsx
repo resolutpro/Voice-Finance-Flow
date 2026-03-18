@@ -1,5 +1,5 @@
-// src/components/layout.tsx
-import { ReactNode } from "react";
+// artifacts/facturacion/src/components/layout.tsx
+import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -16,9 +16,12 @@ import { useCompany } from "@/hooks/use-company";
 import { useListCompanies, useSeedData } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { VoiceAssistant } from "./voice-assistant";
-import { Select } from "./shared-ui";
+// Importamos el nuevo componente de Menú de Usuario
+import { Select, Avatar, AvatarFallback } from "./shared-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+// IMPORTAR EL NUEVO COMPONENTE
+import { UserAvatarMenu } from "./user-avatar-menu";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -27,7 +30,6 @@ const navItems = [
   { href: "/treasury", label: "Tesorería", icon: Landmark },
   { href: "/forecast", label: "Previsión", icon: TrendingUp },
   { href: "/tasks", label: "Tareas", icon: CheckSquare },
-  // Asegúrate de tener el enlace a settings
   { href: "/settings", label: "Configuración", icon: Building2 },
 ];
 
@@ -51,43 +53,37 @@ export function Layout({ children }: { children: ReactNode }) {
     });
   };
 
-  // 1. Buscamos la empresa activa
   const activeCompany = companies?.find((c) => c.id === activeCompanyId);
-
-  // 2. Extraemos sus propiedades estéticas (manejando el caso en que no exista)
   const dynamicLogo = activeCompany?.logo || null;
-  const dynamicColor = (activeCompany as any)?.themeColor || undefined; // Color por defecto si es undefined
+
+  // TAREA 3: Inyección del color de la marca en el background del header.
+  // Usamos el 'themeColor' guardado en la DB como un tintado suave (opacidad 10/255 -> ~4%).
+  // Inyección del color de la marca en el background del header.
 
   return (
-    <div className="min-h-screen bg-background flex flex-col md:flex-row">
-      {/* Sidebar - Hidden on small screens, full height on md+ */}
+    <div className="min-h-screen bg-background flex flex-col md:flex-row border-t-[6px] border-primary transition-colors duration-500">
+      {/* Sidebar */}
       <aside className="w-full md:w-64 bg-card border-r border-border flex-shrink-0 md:h-screen md:sticky md:top-0 z-10 hidden md:flex flex-col">
-        <div className="h-16 flex items-center px-6 border-b border-border/50">
-          <div className="flex items-center gap-2">
-            {/* Si hay logo, lo mostramos, si no, mostramos el icono por defecto */}
-            {dynamicLogo ? (
-              <img
-                src={dynamicLogo}
-                alt="Logo"
-                className="w-8 h-8 object-contain"
-              />
-            ) : (
-              <Landmark
-                className="w-6 h-6"
-                style={{ color: dynamicColor || "var(--primary)" }}
-              />
-            )}
-
-            <span
-              className="font-display font-bold text-xl tracking-tight"
-              style={{ color: dynamicColor || "inherit" }}
-            >
+        <div className="h-20 flex items-center px-6 border-b border-border/50 relative overflow-hidden bg-primary/5">
+          <div className="flex items-center gap-3 relative z-10 w-full">
+            <div className="w-10 h-10 rounded-xl bg-white shadow-sm border flex items-center justify-center p-1 shrink-0">
+              {dynamicLogo ? (
+                <img
+                  src={dynamicLogo}
+                  alt="Logo"
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <Landmark className="w-6 h-6 text-primary" />
+              )}
+            </div>
+            <span className="font-display font-bold text-lg tracking-tight truncate text-foreground">
               {activeCompany ? activeCompany.name : "FinanzasPro"}
             </span>
           </div>
         </div>
 
-        <div className="p-4 flex-1 overflow-y-auto space-y-1">
+        <div className="p-4 flex-1 overflow-y-auto space-y-1 mt-2">
           {navItems.map((item) => {
             const isActive =
               location === item.href ||
@@ -97,17 +93,23 @@ export function Layout({ children }: { children: ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all duration-200",
+                  "flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all duration-200 relative group",
                   isActive
-                    ? "bg-primary/10" // Mantenemos un fondo genérico
+                    ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                 )}
-                // Aplicamos el color del texto dinámicamente si está activo
-                style={
-                  isActive ? { color: dynamicColor || "var(--primary)" } : {}
-                }
               >
-                <item.icon className="w-5 h-5" />
+                {isActive && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-md"></div>
+                )}
+                <item.icon
+                  className={cn(
+                    "w-5 h-5",
+                    isActive
+                      ? "text-primary"
+                      : "text-muted-foreground group-hover:text-foreground",
+                  )}
+                />
                 {item.label}
               </Link>
             );
@@ -117,27 +119,35 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
+        {/* Header TAREA 3: Inyectamos el tintado de color en la sección izquierda del header */}
         <header className="h-16 bg-card/80 backdrop-blur-md border-b border-border/50 sticky top-0 z-10 px-4 md:px-8 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          {/* SECCIÓN IZQUIERDA: Usamos bg-primary/5 que ahora funcionará perfecto con tu HEX */}
+          <div className="flex items-center gap-4 flex-1 h-full px-2 bg-primary/5 border-b-2 border-primary/20 transition-colors">
             <button className="md:hidden p-2 text-muted-foreground">
               <Menu className="w-6 h-6" />
             </button>
-            <h1 className="font-display font-semibold text-lg hidden sm:block">
-              {navItems.find(
-                (n) =>
-                  n.href === location ||
-                  (n.href !== "/" && location.startsWith(n.href)),
-              )?.label || "App"}
+            <h1 className="font-display font-semibold text-xl hidden sm:block text-primary truncate max-w-sm">
+              {activeCompany
+                ? activeCompany.name
+                : navItems.find(
+                    (n) =>
+                      n.href === location ||
+                      (n.href !== "/" && location.startsWith(n.href)),
+                  )?.label || "App"}
             </h1>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-secondary rounded-xl px-2 py-1 border border-border/50">
-              <Building2 className="w-4 h-4 text-muted-foreground ml-2 hidden sm:block" />
+          {/* SECCIÓN DERECHA: Controles */}
+          <div className="flex items-center gap-4 pl-4 border-l">
+            {/* TAREA 2: Selector de empresa más prominente y con ancho suficiente para el nombre completo */}
+            <div className="flex items-center gap-2 bg-primary/10 rounded-xl px-2 py-1 border border-primary/20 transition-colors">
+              <Building2 className="w-4 h-4 text-primary ml-2 hidden sm:block" />
               <Select
-                className="h-8 border-none bg-transparent shadow-none focus:ring-0 w-[180px] font-medium"
+                // Aumentamos el ancho a w-[240px] o más si es necesario para mostrar el nombre completo.
+                className="h-8 border-none bg-transparent shadow-none focus:ring-0 w-[240px] font-semibold text-primary"
                 value={activeCompanyId || ""}
+                // En el frontend, React prefiere que usemos un valor de tipo 'string' para los options.
+                // Aquí, el onChange convertirá el valor de vuelta a número para `setActiveCompanyId`.
                 onChange={(e) =>
                   setActiveCompanyId(
                     e.target.value ? Number(e.target.value) : null,
@@ -146,7 +156,8 @@ export function Layout({ children }: { children: ReactNode }) {
               >
                 <option value="">Sin empresa</option>
                 {companies?.map((c) => (
-                  <option key={c.id} value={c.id}>
+                  // Usamos `Number(c.id)` para la validación estricta de Zod si es necesario
+                  <option key={c.id} value={String(c.id)}>
                     {c.name}
                   </option>
                 ))}
@@ -157,13 +168,8 @@ export function Layout({ children }: { children: ReactNode }) {
               <Bell className="w-5 h-5" />
             </button>
 
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold border-2 border-white shadow-sm"
-              // Usamos el color dinámico como fondo del avatar
-              style={{ backgroundColor: dynamicColor || "var(--primary)" }}
-            >
-              JS
-            </div>
+            {/* TAREA 1: Reemplazamos el placeholder US por el nuevo Menú de Usuario interactivo */}
+            <UserAvatarMenu />
           </div>
         </header>
 

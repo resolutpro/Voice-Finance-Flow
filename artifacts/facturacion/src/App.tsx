@@ -1,10 +1,11 @@
+// artifacts/facturacion/src/App.tsx
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { CompanyProvider } from "@/hooks/use-company";
-import { AuthProvider, useAuth } from "@/hooks/use-auth"; // Importamos el contexto
+import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/layout";
 
 // Páginas de auth
@@ -23,40 +24,42 @@ import SettingsPage from "@/pages/settings";
 
 const queryClient = new QueryClient();
 
-// Componente para proteger las rutas privadas
-const ProtectedRoute = ({ component: Component, ...rest }: any) => {
+// Este componente envuelve de forma segura toda el área privada
+function PrivateApp() {
   const { isAuthenticated } = useAuth();
-  if (!isAuthenticated) return <Redirect to="/login" />;
-  return <Component {...rest} />;
-};
 
-function Router() {
-  const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
 
   return (
+    <CompanyProvider>
+      <Layout>
+        <Switch>
+          <Route path="/" component={Dashboard} />
+          <Route path="/invoices" component={InvoicesPage} />
+          <Route path="/purchases" component={PurchasesPage} />
+          <Route path="/treasury" component={TreasuryPage} />
+          <Route path="/forecast" component={ForecastPage} />
+          <Route path="/tasks" component={TasksPage} />
+          <Route path="/settings" component={SettingsPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </Layout>
+    </CompanyProvider>
+  );
+}
+
+function Router() {
+  return (
     <Switch>
-      {/* Rutas Públicas (Sin Layout) */}
+      {/* Rutas Públicas */}
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
 
-      {/* Rutas Privadas (Con Layout). Nota: Le quitamos el path="/:rest*" */}
+      {/* Ruta Privada: Derivamos toda la lógica a un sub-componente seguro */}
       <Route>
-        {isAuthenticated ? (
-          <Layout>
-            <Switch>
-              <Route path="/" component={Dashboard} />
-              <Route path="/invoices" component={InvoicesPage} />
-              <Route path="/purchases" component={PurchasesPage} />
-              <Route path="/treasury" component={TreasuryPage} />
-              <Route path="/forecast" component={ForecastPage} />
-              <Route path="/tasks" component={TasksPage} />
-              <Route path="/settings" component={SettingsPage} />
-              <Route component={NotFound} />
-            </Switch>
-          </Layout>
-        ) : (
-          <Redirect to="/login" />
-        )}
+        <PrivateApp />
       </Route>
     </Switch>
   );
@@ -67,12 +70,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <AuthProvider>
-          <CompanyProvider>
-            <TooltipProvider>
-              <Router />
-              <Toaster />
-            </TooltipProvider>
-          </CompanyProvider>
+          <TooltipProvider>
+            <Router />
+            <Toaster />
+          </TooltipProvider>
         </AuthProvider>
       </WouterRouter>
     </QueryClientProvider>
