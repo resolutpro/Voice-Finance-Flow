@@ -126,15 +126,26 @@ export function Layout({ children }: { children: ReactNode }) {
             <button className="md:hidden p-2 text-muted-foreground">
               <Menu className="w-6 h-6" />
             </button>
-            <h1 className="font-display font-semibold text-xl hidden sm:block text-primary truncate max-w-sm">
-              {activeCompany
-                ? activeCompany.name
-                : navItems.find(
-                    (n) =>
-                      n.href === location ||
-                      (n.href !== "/" && location.startsWith(n.href)),
-                  )?.label || "App"}
-            </h1>
+            <div className="flex items-center gap-2">
+              {dynamicLogo && (
+                <div className="w-8 h-8 rounded-lg bg-white shadow-sm border flex items-center justify-center p-1 shrink-0">
+                  <img
+                    src={dynamicLogo}
+                    alt="Logo"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              )}
+              <h1 className="font-display font-semibold text-xl hidden sm:block text-primary truncate max-w-sm">
+                {activeCompany
+                  ? activeCompany.name
+                  : navItems.find(
+                      (n) =>
+                        n.href === location ||
+                        (n.href !== "/" && location.startsWith(n.href)),
+                    )?.label || "App"}
+              </h1>
+            </div>
           </div>
 
           {/* SECCIÓN DERECHA: Controles */}
