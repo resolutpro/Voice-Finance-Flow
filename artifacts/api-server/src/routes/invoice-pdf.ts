@@ -21,22 +21,22 @@ router.get("/invoice-pdf/:id", async (req, res) => {
       idParam === "NaN" ||
       idParam === "null"
     ) {
-      return res.status(400).send("ID de factura no válido");
+      return res.status(400).send("ID de documento no válido");
     }
 
     const invoiceId = parseInt(idParam, 10);
     if (Number.isNaN(invoiceId)) {
-      return res.status(400).send("El ID de la factura debe ser numérico");
+      return res.status(400).send("El ID del documento debe ser numérico");
     }
 
-    // 1. Obtener Factura
+    // 1. Obtener Factura / Presupuesto
     const [invoice] = await db
       .select()
       .from(invoicesTable)
       .where(eq(invoicesTable.id, invoiceId))
       .limit(1);
 
-    if (!invoice) return res.status(404).send("Factura no encontrada");
+    if (!invoice) return res.status(404).send("Documento no encontrado");
 
     // 2. Obtener Líneas (Items)
     const items = await db
@@ -62,13 +62,18 @@ router.get("/invoice-pdf/:id", async (req, res) => {
       client = foundClient;
     }
 
+    // 5. Determinar Textos Dinámicos (Factura vs Presupuesto)
+    const isQuote = invoice.type === "quote";
+    const documentTitle = isQuote ? "Presupuesto" : "Factura";
+    const referenceLabel = isQuote ? "Ref:" : "Nº:";
+
     // Generar Plantilla HTML A4
     const htmlTemplate = `
     <!DOCTYPE html>
     <html lang="es">
     <head>
       <meta charset="UTF-8">
-      <title>Factura ${invoice.invoiceNumber}</title>
+      <title>${documentTitle} ${invoice.invoiceNumber}</title>
       <script src="https://cdn.tailwindcss.com"></script>
       <style>
         @page { size: A4; margin: 0; }
@@ -84,7 +89,7 @@ router.get("/invoice-pdf/:id", async (req, res) => {
     <body class="text-gray-800 font-sans">
 
       <div class="text-center py-4 no-print bg-zinc-800 text-white flex justify-between px-10 items-center">
-        <p>Vista previa de factura</p>
+        <p>Vista previa de ${documentTitle.toLowerCase()}</p>
         <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded font-semibold text-sm">🖨️ Imprimir / Guardar como PDF</button>
       </div>
 
@@ -99,16 +104,16 @@ router.get("/invoice-pdf/:id", async (req, res) => {
             <p class="text-sm text-gray-500 mt-1"><strong>CIF/NIF:</strong> ${company?.taxId || ""}</p>
           </div>
           <div class="text-right">
-            <h1 class="text-4xl font-light text-gray-300 uppercase tracking-widest mb-4">Factura</h1>
-            <p class="font-bold text-gray-800 text-lg">Nº: ${invoice.invoiceNumber}</p>
+            <h1 class="text-4xl font-light text-gray-300 uppercase tracking-widest mb-4">${documentTitle}</h1>
+            <p class="font-bold text-gray-800 text-lg">${referenceLabel} ${invoice.invoiceNumber}</p>
             <p class="text-sm text-gray-500 mt-1">Fecha Emisión: <span class="text-gray-800">${new Date(invoice.issueDate).toLocaleDateString("es-ES")}</span></p>
-            ${invoice.dueDate ? `<p class="text-sm text-gray-500 mt-1">Fecha Vencimiento: <span class="text-gray-800">${new Date(invoice.dueDate).toLocaleDateString("es-ES")}</span></p>` : ""}
+            ${invoice.dueDate && !isQuote ? `<p class="text-sm text-gray-500 mt-1">Fecha Vencimiento: <span class="text-gray-800">${new Date(invoice.dueDate).toLocaleDateString("es-ES")}</span></p>` : ""}
           </div>
         </div>
 
         <div class="mb-8">
-          <p class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">Facturar a:</p>
-          <h3 class="text-lg font-bold text-gray-900">${client?.name || "Cliente Final"}</h3>
+          <p class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">${isQuote ? "Presupuestar a:" : "Facturar a:"}</p>
+          <h3 class="text-lg font-bold text-gray-900">${client?.name || invoice.clientName || "Cliente Final"}</h3>
           <p class="text-sm text-gray-600">${client?.address || ""}</p>
           <p class="text-sm text-gray-600">${client?.city || ""}, ${client?.province || ""} ${client?.postalCode || ""}</p>
           <p class="text-sm text-gray-600 mt-1"><strong>CIF/NIF:</strong> ${client?.taxId || "---"}</p>
@@ -162,7 +167,7 @@ router.get("/invoice-pdf/:id", async (req, res) => {
             </tr>
             <tr>
               <td colspan="2" class="p-3 border-0"></td>
-              <td class="p-3 text-right text-gray-900 font-bold text-lg bg-gray-50 rounded-bl">Total Factura</td>
+              <td class="p-3 text-right text-gray-900 font-bold text-lg bg-gray-50 rounded-bl">Total ${documentTitle}</td>
               <td class="p-3 text-right text-gray-900 font-bold text-lg bg-gray-50 rounded-br">${parseFloat(invoice.total).toLocaleString("es-ES", { minimumFractionDigits: 2 })} €</td>
             </tr>
           </tfoot>
@@ -184,7 +189,7 @@ router.get("/invoice-pdf/:id", async (req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(htmlTemplate);
   } catch (error) {
-    console.error("Error generando la vista previa de la factura:", error);
+    console.error("Error generando la vista previa del documento:", error);
     res.status(500).send("Error generando el documento");
   }
 });

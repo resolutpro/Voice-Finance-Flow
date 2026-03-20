@@ -217,6 +217,15 @@ router.post("/invoices", async (req, res): Promise<void> => {
   }
 
   const { items, ...invoiceData } = parsed.data;
+
+  // Limpieza defensiva del payload de status y type
+  const rawBody = req.body as any;
+  const safeType = rawBody.type === "quote" ? "quote" : "invoice";
+  const safeStatus =
+    rawBody.status === "convert_to_invoice"
+      ? "emitida"
+      : invoiceData.status || "borrador";
+
   let subtotal = 0;
   const processedItems: ProcessedItem[] = (items || []).map(
     (
@@ -252,10 +261,12 @@ router.post("/invoices", async (req, res): Promise<void> => {
       companyId: invoiceData.companyId,
       clientId: invoiceData.clientId ?? null,
       projectId: invoiceData.projectId ?? null,
+      type: safeType, // NUEVO
       invoiceNumber,
-      status: invoiceData.status || "borrador",
+      status: safeStatus as any, // NUEVO (Seguro)
       issueDate: invoiceData.issueDate,
       dueDate: invoiceData.dueDate ?? null,
+      concept: rawBody.concept ?? null,
       notes: invoiceData.notes ?? null,
       subtotal: subtotal.toString(),
       taxRate: taxRate.toString(),
@@ -305,6 +316,14 @@ router.patch("/invoices/:id", async (req, res): Promise<void> => {
 
   const { items, ...invoiceData } = body.data;
 
+  // Limpieza defensiva del payload para status y type
+  const rawBody = req.body as any;
+  const safeType = rawBody.type === "quote" ? "quote" : "invoice";
+  const safeStatus =
+    rawBody.status === "convert_to_invoice"
+      ? "emitida"
+      : invoiceData.status || "borrador";
+
   if (items) {
     await db
       .delete(invoiceItemsTable)
@@ -339,6 +358,9 @@ router.patch("/invoices/:id", async (req, res): Promise<void> => {
       .update(invoicesTable)
       .set({
         ...invoiceData,
+        type: safeType, // NUEVO
+        status: safeStatus as any, // NUEVO
+        concept: rawBody.concept ?? undefined,
         subtotal: subtotal.toString(),
         taxRate: taxRate.toString(),
         taxAmount: taxAmount.toString(),
@@ -352,7 +374,12 @@ router.patch("/invoices/:id", async (req, res): Promise<void> => {
   } else {
     await db
       .update(invoicesTable)
-      .set(invoiceData)
+      .set({
+        ...invoiceData,
+        type: safeType,
+        status: safeStatus as any,
+        concept: rawBody.concept ?? undefined,
+      })
       .where(eq(invoicesTable.id, params.data.id));
   }
 
@@ -432,12 +459,10 @@ router.post("/invoices/:id/payment", async (req, res): Promise<void> => {
     return;
   }
   if (account.companyId !== invoice.companyId) {
-    res
-      .status(400)
-      .json({
-        error:
-          "La cuenta bancaria debe pertenecer a la misma empresa que la factura",
-      });
+    res.status(400).json({
+      error:
+        "La cuenta bancaria debe pertenecer a la misma empresa que la factura",
+    });
     return;
   }
 

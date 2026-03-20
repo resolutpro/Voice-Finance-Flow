@@ -26,6 +26,8 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
   "anulada",
 ]);
 
+export const documentTypeEnum = pgEnum("document_type", ["invoice", "quote"]);
+
 export const invoicesTable = pgTable("invoices", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id")
@@ -33,6 +35,7 @@ export const invoicesTable = pgTable("invoices", {
     .references(() => companiesTable.id),
   clientId: integer("client_id").references(() => clientsTable.id),
   projectId: integer("project_id").references(() => projectsTable.id),
+  type: documentTypeEnum("type").notNull().default("invoice"),
   invoiceNumber: text("invoice_number").notNull(),
   status: invoiceStatusEnum("status").notNull().default("borrador"), // ACTUALIZADO al Enum
   issueDate: date("issue_date").notNull(),
