@@ -321,6 +321,9 @@ export const ListProjectsResponseItem = zod.object({
   description: zod.string().nullish(),
   status: zod.string(),
   active: zod.boolean(),
+  assignee: zod.string().nullish(),
+  dueDate: zod.string().nullish(),
+  observations: zod.string().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
 });
@@ -333,15 +336,51 @@ export const CreateProjectBody = zod.object({
   description: zod.string().nullish(),
   status: zod.string().optional(),
   active: zod.boolean().optional(),
+  assignee: zod.string().nullish(),
+  dueDate: zod.string().nullish(),
+  observations: zod.string().nullish(),
 });
 
-export const ListCategoriesResponseItem = zod.object({
-  id: zod.number(),
-  name: zod.string(),
-  type: zod.string(),
-  parentId: zod.number().nullish(),
-  createdAt: zod.string(),
+export const UpdateProjectParams = zod.object({
+  id: zod.coerce.number(),
 });
+
+export const UpdateProjectBody = zod.object({
+  companyId: zod.number(),
+  clientId: zod.number().nullish(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  status: zod.string().optional(),
+  active: zod.boolean().optional(),
+  assignee: zod.string().nullish(),
+  dueDate: zod.string().nullish(),
+  observations: zod.string().nullish(),
+});
+
+export const UpdateProjectResponse = zod.object({
+  id: zod.number(),
+  companyId: zod.number(),
+  clientId: zod.number().nullish(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  status: zod.string(),
+  active: zod.boolean(),
+  assignee: zod.string().nullish(),
+  dueDate: zod.string().nullish(),
+  observations: zod.string().nullish(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+export const DeleteProjectParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteProjectResponse = zod.object({
+  success: zod.boolean(),
+});
+
+export const ListCategoriesResponseItem = zod.unknown();
 export const ListCategoriesResponse = zod.array(ListCategoriesResponseItem);
 
 export const CreateCategoryBody = zod.object({
@@ -933,6 +972,9 @@ export const GetDashboardResponse = zod.object({
       status: zod.string(),
       priority: zod.string().nullish(),
       dueDate: zod.string().nullish(),
+      assignee: zod.string().nullish(),
+      meetingReference: zod.string().nullish(),
+      observations: zod.string().nullish(),
       relatedType: zod.string().nullish(),
       relatedId: zod.number().nullish(),
       createdAt: zod.string(),
@@ -988,6 +1030,9 @@ export const ListTasksResponseItem = zod.object({
   status: zod.string(),
   priority: zod.string().nullish(),
   dueDate: zod.string().nullish(),
+  assignee: zod.string().nullish(),
+  meetingReference: zod.string().nullish(),
+  observations: zod.string().nullish(),
   relatedType: zod.string().nullish(),
   relatedId: zod.number().nullish(),
   createdAt: zod.string(),
@@ -1002,6 +1047,9 @@ export const CreateTaskBody = zod.object({
   status: zod.string().optional(),
   priority: zod.string().optional(),
   dueDate: zod.string().nullish(),
+  assignee: zod.string().nullish(),
+  meetingReference: zod.string().nullish(),
+  observations: zod.string().nullish(),
   relatedType: zod.string().nullish(),
   relatedId: zod.number().nullish(),
 });
@@ -1017,6 +1065,9 @@ export const UpdateTaskBody = zod.object({
   status: zod.string().optional(),
   priority: zod.string().optional(),
   dueDate: zod.string().nullish(),
+  assignee: zod.string().nullish(),
+  meetingReference: zod.string().nullish(),
+  observations: zod.string().nullish(),
   relatedType: zod.string().nullish(),
   relatedId: zod.number().nullish(),
 });
@@ -1029,6 +1080,9 @@ export const UpdateTaskResponse = zod.object({
   status: zod.string(),
   priority: zod.string().nullish(),
   dueDate: zod.string().nullish(),
+  assignee: zod.string().nullish(),
+  meetingReference: zod.string().nullish(),
+  observations: zod.string().nullish(),
   relatedType: zod.string().nullish(),
   relatedId: zod.number().nullish(),
   createdAt: zod.string(),

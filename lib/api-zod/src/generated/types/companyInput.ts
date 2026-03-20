@@ -25,6 +25,7 @@ export interface CompanyInput {
   logo?: string | null;
   /** @nullable */
   themeColor?: string | null;
+  bankAccountNumber: string;
   isUte?: boolean;
   active?: boolean;
 }

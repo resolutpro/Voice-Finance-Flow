@@ -19,6 +19,12 @@ export interface TaskItem {
   /** @nullable */
   dueDate?: string | null;
   /** @nullable */
+  assignee?: string | null;
+  /** @nullable */
+  meetingReference?: string | null;
+  /** @nullable */
+  observations?: string | null;
+  /** @nullable */
   relatedType?: string | null;
   /** @nullable */
   relatedId?: number | null;

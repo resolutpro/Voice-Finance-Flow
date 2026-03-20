@@ -307,6 +307,51 @@ paths:
               schema:
                 $ref: "#/components/schemas/Project"
 
+  /projects/{id}:
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required:
+                  - success
+      
   /categories:
     get:
       operationId: listCategories
@@ -1215,59 +1260,56 @@ components:
       required: [companyId, name]
 
     Project:
-      type: object
-      properties:
-        id:
-          type: integer
-        companyId:
-          type: integer
-        clientId:
-          type: ["integer", "null"]
-        name:
-          type: string
-        description:
-          type: ["string", "null"]
-        status:
-          type: string
-        active:
-          type: boolean
-        createdAt:
-          type: string
-        updatedAt:
-          type: string
-      required: [id, companyId, name, status, active, createdAt, updatedAt]
-
+       type: object
+       properties:
+         id:
+           type: integer
+         companyId:
+           type: integer
+         clientId:
+           type: ["integer", "null"]
+         name:
+           type: string
+         description:
+           type: ["string", "null"]
+         status:
+           type: string
+         active:
+           type: boolean
+         assignee:
+           type: ["string", "null"]
+         dueDate:
+           type: ["string", "null"]
+         observations:
+           type: ["string", "null"]
+         createdAt:
+           type: string
+         updatedAt:
+           type: string
+       required: [id, companyId, name, status, active, createdAt, updatedAt]
+  
     ProjectInput:
-      type: object
-      properties:
-        companyId:
-          type: integer
-        clientId:
-          type: ["integer", "null"]
-        name:
-          type: string
-        description:
-          type: ["string", "null"]
-        status:
-          type: string
-        active:
-          type: boolean
-      required: [companyId, name]
-
-    Category:
-      type: object
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        type:
-          type: string
-        parentId:
-          type: ["integer", "null"]
-        createdAt:
-          type: string
-      required: [id, name, type, createdAt]
+       type: object
+       properties:
+         companyId:
+           type: integer
+         clientId:
+           type: ["integer", "null"]
+         name:
+           type: string
+         description:
+           type: ["string", "null"]
+         status:
+           type: string
+         active:
+           type: boolean
+         assignee:
+           type: ["string", "null"]
+         dueDate:
+           type: ["string", "null"]
+         observations:
+           type: ["string", "null"]
+       required: [companyId, name]
 
     CategoryInput:
       type: object
@@ -1621,6 +1663,12 @@ components:
           type: ["string", "null"]
         dueDate:
           type: ["string", "null"]
+        assignee:
+          type: ["string", "null"]
+        meetingReference:
+          type: ["string", "null"]
+        observations:
+          type: ["string", "null"]
         relatedType:
           type: ["string", "null"]
         relatedId:
@@ -1645,6 +1693,12 @@ components:
         priority:
           type: string
         dueDate:
+          type: ["string", "null"]
+        assignee:
+          type: ["string", "null"]
+        meetingReference:
+          type: ["string", "null"]
+        observations:
           type: ["string", "null"]
         relatedType:
           type: ["string", "null"]

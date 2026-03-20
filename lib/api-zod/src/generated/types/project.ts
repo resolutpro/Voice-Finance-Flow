@@ -16,6 +16,12 @@ export interface Project {
   description?: string | null;
   status: string;
   active: boolean;
+  /** @nullable */
+  assignee?: string | null;
+  /** @nullable */
+  dueDate?: string | null;
+  /** @nullable */
+  observations?: string | null;
   createdAt: string;
   updatedAt: string;
 }

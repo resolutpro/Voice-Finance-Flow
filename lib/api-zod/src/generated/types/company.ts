@@ -26,6 +26,7 @@ export interface Company {
   logo?: string | null;
   /** @nullable */
   themeColor?: string | null;
+  bankAccountNumber: string;
   isUte: boolean;
   active: boolean;
   createdAt: string;

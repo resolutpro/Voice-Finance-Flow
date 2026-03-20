@@ -6,11 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface Category {
-  id: number;
-  name: string;
-  type: string;
-  /** @nullable */
-  parentId?: number | null;
-  createdAt: string;
-}
+export type DeleteProject200 = {
+  success: boolean;
+};

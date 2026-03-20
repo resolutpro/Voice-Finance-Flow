@@ -29,6 +29,7 @@ export interface Company {
   logo?: string | null;
   /** @nullable */
   themeColor?: string | null;
+  bankAccountNumber: string;
   isUte: boolean;
   active: boolean;
   createdAt: string;
@@ -54,6 +55,7 @@ export interface CompanyInput {
   logo?: string | null;
   /** @nullable */
   themeColor?: string | null;
+  bankAccountNumber: string;
   isUte?: boolean;
   active?: boolean;
 }
@@ -196,6 +198,12 @@ export interface Project {
   description?: string | null;
   status: string;
   active: boolean;
+  /** @nullable */
+  assignee?: string | null;
+  /** @nullable */
+  dueDate?: string | null;
+  /** @nullable */
+  observations?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -209,15 +217,12 @@ export interface ProjectInput {
   description?: string | null;
   status?: string;
   active?: boolean;
-}
-
-export interface Category {
-  id: number;
-  name: string;
-  type: string;
   /** @nullable */
-  parentId?: number | null;
-  createdAt: string;
+  assignee?: string | null;
+  /** @nullable */
+  dueDate?: string | null;
+  /** @nullable */
+  observations?: string | null;
 }
 
 export interface CategoryInput {
@@ -455,6 +460,12 @@ export interface TaskItem {
   /** @nullable */
   dueDate?: string | null;
   /** @nullable */
+  assignee?: string | null;
+  /** @nullable */
+  meetingReference?: string | null;
+  /** @nullable */
+  observations?: string | null;
+  /** @nullable */
   relatedType?: string | null;
   /** @nullable */
   relatedId?: number | null;
@@ -472,6 +483,12 @@ export interface TaskInput {
   priority?: string;
   /** @nullable */
   dueDate?: string | null;
+  /** @nullable */
+  assignee?: string | null;
+  /** @nullable */
+  meetingReference?: string | null;
+  /** @nullable */
+  observations?: string | null;
   /** @nullable */
   relatedType?: string | null;
   /** @nullable */
@@ -551,6 +568,10 @@ export type ListSuppliersParams = {
 
 export type ListProjectsParams = {
   companyId?: number;
+};
+
+export type DeleteProject200 = {
+  success: boolean;
 };
 
 export type ListInvoicesParams = {
