@@ -30,20 +30,36 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
   const activeCompanyId = companyId || 1;
 
   try {
+    // 1. Obtener la lista de nombres de clientes de la empresa activa para darle contexto a la IA
+    const companyClients = await db
+      .select({ name: clientsTable.name })
+      .from(clientsTable)
+      .where(eq(clientsTable.companyId, activeCompanyId));
+
+    const clientNamesStr = companyClients.map((c) => c.name).join(", ");
+
+    // 2. Mejorar el Prompt para que diferencie facturas/presupuestos y conozca a tus clientes
     const systemPrompt = `
       Eres el asistente de voz de una aplicación de facturación.
       Hoy es ${new Date().toISOString().split("T")[0]}.
       Analiza la transcripción y extrae la intención y los datos relevantes.
 
+      Clientes registrados en esta empresa: [${clientNamesStr || "Ninguno"}].
+      Si el usuario menciona a un cliente, intenta emparejarlo usando EXACTAMENTE el nombre de esta lista si suena similar.
+
+      Identifica si el usuario quiere crear una FACTURA ("invoice") o un PRESUPUESTO ("quote"). Si no lo especifica, asume "invoice".
+
       Responde ÚNICAMENTE con JSON válido:
       {
-        "intent": "CREATE_INVOICE" | "CREATE_EXPENSE" | "CREATE_TASK" | "REGISTER_PAYMENT" | "SHOW_PAYMENTS" | "SHOW_FORECAST" | "UNKNOWN",
+        "intent": "CREATE_DOCUMENT" | "CREATE_EXPENSE" | "CREATE_TASK" | "REGISTER_PAYMENT" | "SHOW_PAYMENTS" | "SHOW_FORECAST" | "UNKNOWN",
         "entities": {
+          "documentType": "invoice" | "quote",
           "amount": number | null,
           "concept": string | null,
           "clientName": string | null,
           "hasIva": boolean | null,
           "date": string | null,
+          "dueDate": string | null,
           "invoiceNumber": string | null
         }
       }
@@ -64,10 +80,19 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
     );
     const { intent, entities } = aiResponse;
 
-    if (intent === "CREATE_INVOICE") {
-      const { amount, concept, clientName, hasIva, date } = entities;
+    if (intent === "CREATE_DOCUMENT" || intent === "CREATE_INVOICE") {
+      const {
+        amount,
+        concept,
+        clientName,
+        hasIva,
+        date,
+        dueDate,
+        documentType,
+      } = entities;
       const numAmount = amount || 0;
       const finalConcept = concept || "Servicios generales";
+      const docType = documentType === "quote" ? "quote" : "invoice";
 
       let clientId: number | null = null;
       let finalClientName = clientName || "";
@@ -96,7 +121,7 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
       }
 
       res.json({
-        intent: "create_invoice", // Enviamos en minúsculas por seguridad
+        intent: "create_invoice", // Mantenemos esta clave para que el frontend abra el modal correcto
         confidence: 0.95,
         entities: {
           clientId,
@@ -106,7 +131,7 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
           concept: finalConcept,
         },
         preview: {
-          type: "invoice",
+          type: docType, // Aquí viaja "invoice" o "quote"
           clientId,
           clientName: finalClientName,
           companyId: activeCompanyId,
@@ -117,8 +142,9 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
               unitPrice: numAmount.toString(),
             },
           ],
-          taxRate: hasIva ? "21" : "0",
+          taxRate: hasIva !== false ? "21" : "0", // Si dice explícitamente sin IVA es 0, si no 21
           issueDate: date || new Date().toISOString().split("T")[0],
+          dueDate: dueDate || null,
         },
         message: text,
       });

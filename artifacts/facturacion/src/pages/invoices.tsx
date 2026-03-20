@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCompany } from "@/hooks/use-company";
 import { Button } from "@/components/ui/button";
@@ -162,6 +162,63 @@ export default function InvoicesPage() {
     fetchAllInvoices();
   }, [companyId]);
 
+  // === LÓGICA PARA CAPTURAR BORRADOR CREADO POR VOZ ===
+  const loadVoiceDraft = useCallback(() => {
+    const draft = sessionStorage.getItem("voice_draft_invoice");
+    if (draft) {
+      try {
+        const parsedDraft = JSON.parse(draft);
+
+        // Abre el modal principal seteando los datos que sacó la IA
+        setEditingInvoice({
+          isNew: true,
+          type: parsedDraft.type === "quote" ? "quote" : "invoice",
+          status: "borrador",
+          invoiceNumber: "", // Se autogenerará en el backend
+          clientId: parsedDraft.clientId
+            ? Number(parsedDraft.clientId)
+            : undefined,
+          clientName: parsedDraft.clientName || "",
+          issueDate:
+            parsedDraft.issueDate || new Date().toISOString().split("T")[0],
+          dueDate: parsedDraft.dueDate || undefined,
+          concept: parsedDraft.items?.[0]?.description || "",
+          taxRate: parsedDraft.taxRate ? Number(parsedDraft.taxRate) : 21,
+          items:
+            parsedDraft.items?.length > 0
+              ? parsedDraft.items.map((item: any) => ({
+                  description: item.description || "",
+                  quantity: String(item.quantity || "1"),
+                  unitPrice: String(item.unitPrice || "0"),
+                }))
+              : [{ description: "Nueva línea", quantity: "1", unitPrice: "0" }],
+        });
+
+        // Cambia la pestaña de fondo automáticamente (Presupuestos o Emitidas)
+        setActiveTab(
+          parsedDraft.type === "quote" ? "presupuestos" : "emitidas",
+        );
+
+        // Limpiamos la memoria para que no vuelva a saltar si refrescas la página
+        sessionStorage.removeItem("voice_draft_invoice");
+      } catch (e) {
+        console.error("Error cargando borrador de voz:", e);
+      }
+    }
+  }, []);
+
+  // Efecto para cuando navegamos hacia esta página
+  useEffect(() => {
+    loadVoiceDraft();
+  }, [loadVoiceDraft]);
+
+  // Efecto para cuando ya estamos en la página de facturas y usamos la voz
+  useEffect(() => {
+    window.addEventListener("voice_draft_ready", loadVoiceDraft);
+    return () =>
+      window.removeEventListener("voice_draft_ready", loadVoiceDraft);
+  }, [loadVoiceDraft]);
+
   // === LÓGICA DE SUBIDA DE PDF ===
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -191,6 +248,7 @@ export default function InvoicesPage() {
 
     setIsUploading(true);
     const formData = new FormData();
+
     formData.append("file", file);
     formData.append("companyId", companyId.toString());
 
@@ -1019,10 +1077,18 @@ export default function InvoicesPage() {
 
           {editingInvoice &&
             (() => {
+              // Buscamos el estado ORIGINAL en la lista, no el que estamos editando en el desplegable
+              const originalInvoice = invoices.find(
+                (inv) => inv.id === editingInvoice.id,
+              );
+              const originalStatus = originalInvoice
+                ? originalInvoice.status
+                : editingInvoice.status;
+
               const isReadonly =
                 !editingInvoice.isNew &&
                 editingInvoice.type === "invoice" &&
-                editingInvoice.status !== "borrador";
+                originalStatus !== "borrador";
 
               return (
                 <div className="space-y-6">
@@ -1403,7 +1469,8 @@ export default function InvoicesPage() {
 
               {!(
                 editingInvoice?.type === "invoice" &&
-                editingInvoice?.status !== "borrador" &&
+                (invoices.find((inv) => inv.id === editingInvoice?.id)
+                  ?.status || editingInvoice?.status) !== "borrador" &&
                 !editingInvoice?.isNew
               ) && (
                 <Button
@@ -1420,7 +1487,7 @@ export default function InvoicesPage() {
                       // Sanear estado por si el cliente aceptó el dropdown
                       const safeStatus =
                         editingInvoice.status === "convert_to_invoice"
-                          ? "emitida"
+                          ? "borrador"
                           : editingInvoice.status;
                       const safeType =
                         editingInvoice.status === "convert_to_invoice"

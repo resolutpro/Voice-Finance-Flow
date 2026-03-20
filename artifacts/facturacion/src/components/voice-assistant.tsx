@@ -16,7 +16,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 
-// ... [mantén las interfaces de SpeechRecognition exactamente igual] ...
 interface SpeechRecognitionEvent {
   resultIndex: number;
   results: SpeechRecognitionResultList;
@@ -78,17 +77,10 @@ export function VoiceAssistant() {
   const createInvoiceMutation = useCreateInvoice();
   const createExpenseMutation = useCreateExpense();
   const createTaskMutation = useCreateTask();
-  const registerPaymentMutation = useRegisterInvoicePayment();
-  const { data: allInvoices } = useListInvoices(
-    activeCompanyId ? { companyId: activeCompanyId } : undefined,
-  );
-  const { data: bankAccounts } = useListBankAccounts(
-    activeCompanyId ? { companyId: activeCompanyId } : undefined,
-  );
 
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  const manualStopRef = useRef(false);
-  const transcriptRef = useRef("");
+  const transcriptRef = useRef(""); // Acumula las frases finales
+  const latestTranscriptRef = useRef(""); // Guarda el texto EXACTO en tiempo real (final + provisional)
   const processCommandRef = useRef<(text: string) => void>(() => {});
 
   useEffect(() => {
@@ -96,53 +88,63 @@ export function VoiceAssistant() {
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognitionCtor) {
       const recognition = new SpeechRecognitionCtor();
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = "es-ES";
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         let interimTranscript = "";
+        let currentFinal = transcriptRef.current;
+
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcriptPiece = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            setTranscript((prev) => {
-              const updated = prev + transcriptPiece;
-              transcriptRef.current = updated;
-              return updated;
-            });
+            currentFinal += transcriptPiece + " ";
+            transcriptRef.current = currentFinal; // Actualizamos la ref consolidada al instante
           } else {
             interimTranscript += transcriptPiece;
-            transcriptRef.current = interimTranscript;
-            setTranscript(interimTranscript);
           }
         }
+
+        const fullText = currentFinal + interimTranscript;
+        latestTranscriptRef.current = fullText; // Guardamos lo último escuchado sin retrasos de React
+        setTranscript(fullText);
       };
 
       recognition.onerror = () => {
         setIsListening(false);
-        toast({
-          title: "Error de voz",
-          description: "No se pudo reconocer la voz.",
-          variant: "destructive",
-        });
+        // Si hubo un error (ej. silencio prolongado) pero hay texto, intentamos mandarlo
+        if (latestTranscriptRef.current.trim()) {
+          processCommandRef.current(latestTranscriptRef.current);
+        }
       };
 
       recognition.onend = () => {
         setIsListening(false);
-        if (!manualStopRef.current && transcriptRef.current.trim()) {
-          processCommandRef.current(transcriptRef.current);
+        // Este evento se dispara automáticamente cuando llamamos a stop()
+        if (latestTranscriptRef.current.trim()) {
+          processCommandRef.current(latestTranscriptRef.current);
         }
-        manualStopRef.current = false;
+
+        // Limpiamos referencias para la próxima vez
+        transcriptRef.current = "";
+        latestTranscriptRef.current = "";
+        setTranscript("");
       };
 
       recognitionRef.current = recognition;
     }
     return () => recognitionRef.current?.stop();
-  }, [toast]);
+  }, []);
 
   const processCommand = useCallback(
     (text: string) => {
       if (!text.trim()) return;
+
+      toast({
+        title: "Procesando audio...",
+        description: "La IA está analizando tu solicitud.",
+      });
 
       parseMutation.mutate(
         {
@@ -150,7 +152,6 @@ export function VoiceAssistant() {
         },
         {
           onSuccess: (res) => {
-            // Aseguramos que el intent que guardamos siempre sea en minúsculas
             const intent = (res.intent || "unknown").toLowerCase();
             setVoiceIntent(intent);
             setVoiceMessage(res.message || "");
@@ -164,6 +165,34 @@ export function VoiceAssistant() {
               return;
             }
 
+            // NUEVO: COMPORTAMIENTO PARA FACTURAS Y PRESUPUESTOS
+            if (intent === "create_invoice") {
+              const currentPath = window.location.pathname;
+
+              // 1. Guardamos el borrador de la IA en la memoria del navegador
+              sessionStorage.setItem(
+                "voice_draft_invoice",
+                JSON.stringify(res.preview),
+              );
+
+              // 2. Si ya estamos en /invoices avisamos a la página, si no, navegamos hacia allá
+              if (currentPath === "/invoices") {
+                window.dispatchEvent(new Event("voice_draft_ready"));
+              } else {
+                setLocation("/invoices");
+              }
+
+              toast({
+                title:
+                  res.preview?.type === "quote"
+                    ? "📋 Abriendo Presupuesto..."
+                    : "🧾 Abriendo Factura...",
+                description: "Cargando datos en el formulario principal.",
+              });
+              return; // Salimos de la función para que NO se abra el modal pequeño
+            }
+
+            // Para el resto (gastos, tareas) mantenemos el modal de vista previa
             if (res.preview) {
               setEditablePreview(res.preview as unknown as VoicePreview);
               setShowPreview(true);
@@ -188,12 +217,14 @@ export function VoiceAssistant() {
 
   const toggleListen = () => {
     if (isListening) {
-      manualStopRef.current = true;
+      // Al hacer stop(), el micrófono se apaga y dispara el evento 'onend' que configuramos arriba,
+      // el cual se encarga de coger el latestTranscriptRef y enviarlo con total seguridad.
       recognitionRef.current?.stop();
       setIsListening(false);
-      processCommand(transcript);
     } else {
       setTranscript("");
+      transcriptRef.current = "";
+      latestTranscriptRef.current = "";
       recognitionRef.current?.start();
       setIsListening(true);
     }
@@ -214,17 +245,29 @@ export function VoiceAssistant() {
             issueDate:
               editablePreview.issueDate ||
               new Date().toISOString().split("T")[0],
-            status: "draft",
+            dueDate: editablePreview.dueDate || undefined,
+            type: editablePreview.type === "quote" ? "quote" : "invoice",
+            status: "borrador",
           },
         },
         {
           onSuccess: () => {
             toast({
-              title: "Factura guardada",
+              title:
+                editablePreview.type === "quote"
+                  ? "Presupuesto guardado"
+                  : "Factura guardada",
               description: "Se ha creado como borrador.",
             });
             setShowPreview(false);
             queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+          },
+          onError: (error: any) => {
+            toast({
+              title: "Error guardando documento",
+              description: error.message || "Ocurrió un error inesperado",
+              variant: "destructive",
+            });
           },
         },
       );
@@ -282,7 +325,6 @@ export function VoiceAssistant() {
     }
   };
 
-  // Renderizados dinámicos según el comando para que no salga "vacío"
   return (
     <>
       <AnimatePresence>
@@ -298,7 +340,10 @@ export function VoiceAssistant() {
               <h4 className="font-semibold">Escuchando...</h4>
             </div>
             <p className="text-foreground/80 italic min-h-[3rem]">
-              {transcript || "Di 'Factura para Acme por 500 euros'"}
+              {transcript || "Di 'Crear presupuesto para Acme por 500 euros'"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-2 font-medium">
+              Pulsa el micrófono para enviar
             </p>
           </motion.div>
         )}
@@ -331,9 +376,14 @@ export function VoiceAssistant() {
             Revisa los datos extraídos de tu comando de voz.
           </p>
 
-          {/* Formulario FACTURA */}
+          {/* Formulario FACTURA / PRESUPUESTO */}
           {voiceIntent === "create_invoice" && (
             <div className="space-y-4">
+              <div className="font-bold text-lg text-primary border-b pb-2">
+                {editablePreview.type === "quote"
+                  ? "📋 Nuevo Presupuesto"
+                  : "🧾 Nueva Factura"}
+              </div>
               <div>
                 <Label>Nombre del Cliente</Label>
                 <Input
@@ -394,6 +444,34 @@ export function VoiceAssistant() {
                     setEditablePreview({ ...editablePreview, items: newItems });
                   }}
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Fecha Emisión</Label>
+                  <Input
+                    type="date"
+                    value={editablePreview.issueDate || ""}
+                    onChange={(e) =>
+                      setEditablePreview({
+                        ...editablePreview,
+                        issueDate: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Vencimiento (Opcional)</Label>
+                  <Input
+                    type="date"
+                    value={editablePreview.dueDate || ""}
+                    onChange={(e) =>
+                      setEditablePreview({
+                        ...editablePreview,
+                        dueDate: e.target.value,
+                      })
+                    }
+                  />
+                </div>
               </div>
             </div>
           )}

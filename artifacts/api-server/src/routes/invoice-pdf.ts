@@ -173,6 +173,9 @@ router.get("/invoice-pdf/:id", async (req, res) => {
           </tfoot>
         </table>
 
+        ${
+          !isQuote
+            ? `
         <div class="mt-auto pt-8 border-t border-gray-200">
           <div class="text-gray-500 text-sm">
             <p class="font-bold text-gray-700 mb-2">Forma de Pago:</p>
@@ -180,6 +183,9 @@ router.get("/invoice-pdf/:id", async (req, res) => {
             ${company?.bankAccountNumber ? `<p class="mt-1">Cuenta IBAN: <strong class="text-gray-800">${company.bankAccountNumber}</strong></p>` : `<p class="mt-1 italic">Cuenta bancaria no configurada</p>`}
           </div>
         </div>
+        `
+            : ""
+        }
 
       </div>
     </body>
