@@ -19,6 +19,7 @@ import receivablesRouter from "./receivables";
 import payablesRouter from "./payables";
 import seedRouter from "./seed";
 import productsRouter from "./products";
+import recurringCommitmentsRouter from "./recurring-commitments";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(invoicePdfRouter);
 router.use(receivablesRouter);
 router.use(payablesRouter);
 router.use(seedRouter);
+router.use(recurringCommitmentsRouter);
 
 export default router;
