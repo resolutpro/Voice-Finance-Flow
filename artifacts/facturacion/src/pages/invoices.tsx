@@ -1041,6 +1041,40 @@ export default function InvoicesPage() {
                   )}
                 </div>
               </div>
+
+              <DialogFooter className="flex flex-col sm:flex-row sm:justify-between items-center mt-6 pt-4 border-t gap-4">
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <Button
+                    variant="destructive"
+                    onClick={async () => {
+                      if (
+                        confirm(
+                          "¿Estás seguro de borrar esta factura de forma permanente?",
+                        )
+                      ) {
+                        try {
+                          await fetch(`/api/vendor-invoices/${selectedVendorInvoice.id}`, {
+                            method: "DELETE",
+                          });
+                          toast({ title: "Factura eliminada" });
+                          setSelectedVendorInvoice(null);
+                          loadVendorInvoices();
+                        } catch (e) {
+                          toast({
+                            title: "Error al borrar",
+                            variant: "destructive",
+                          });
+                        }
+                      }
+                    }}
+                  >
+                    Borrar
+                  </Button>
+                </div>
+                <Button onClick={() => setSelectedVendorInvoice(null)}>
+                  Cerrar
+                </Button>
+              </DialogFooter>
             </div>
           )}
         </DialogContent>

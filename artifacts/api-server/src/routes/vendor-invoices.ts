@@ -418,4 +418,31 @@ router.post("/vendor-invoices/:id/payment", async (req, res): Promise<void> => {
   // ... tu código de payment intacto ...
 });
 
+// DELETE - Eliminar factura de proveedor y sus líneas
+router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
+  const params = UpdateVendorInvoiceParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      // Primero eliminar las líneas de la factura
+      await tx
+        .delete(vendorInvoiceItemsTable)
+        .where(eq(vendorInvoiceItemsTable.vendorInvoiceId, params.data.id));
+      
+      // Luego eliminar la factura principal
+      await tx
+        .delete(vendorInvoicesTable)
+        .where(eq(vendorInvoicesTable.id, params.data.id));
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("❌ Error eliminando factura de proveedor:", error);
+    res.status(500).json({ error: error.message || "Error eliminando factura" });
+  }
+});
+
 export default router;
