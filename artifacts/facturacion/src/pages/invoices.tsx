@@ -297,7 +297,7 @@ export default function InvoicesPage() {
         total: parsedData.totalAmount?.toString() || "0",
         extractedData: parsedData.allExtractedFields,
         lineItems: parsedData.lineItems,
-        status: "borrador",
+        status: "pendiente_pago",
       };
 
       const response = await fetch("/api/vendor-invoices", {
