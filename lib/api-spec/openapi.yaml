@@ -914,6 +914,13 @@ paths:
           schema:
             type: integer
             default: 8
+        - name: interval
+          in: query
+          schema:
+            type: string
+            enum: [week, month]
+            default: week
+          description: Agrupación del pronóstico (semanal o mensual)
       responses:
         "200":
           description: Cash forecast
@@ -1966,9 +1973,33 @@ components:
                 type: string
               expectedExpenses:
                 type: string
+              expectedIncomeInvoices:
+                type: string
+              expectedExpenseVendors:
+                type: string
+              expectedExpenseRecurring:
+                type: string
               projectedBalance:
                 type: string
-            required: [weekStart, weekEnd, expectedIncome, expectedExpenses, projectedBalance]
+              incomeDetails: # <-- NUEVO: Desglose de ingresos
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type: { type: string }
+                    description: { type: string }
+                    amount: { type: string }
+                    date: { type: string }
+              expenseDetails: # <-- NUEVO: Desglose de gastos
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type: { type: string }
+                    description: { type: string }
+                    amount: { type: string }
+                    date: { type: string }
+            required: [weekStart, weekEnd, expectedIncome, expectedExpenses, expectedIncomeInvoices, expectedExpenseVendors, expectedExpenseRecurring, projectedBalance, incomeDetails, expenseDetails]
         alerts:
           type: array
           items:

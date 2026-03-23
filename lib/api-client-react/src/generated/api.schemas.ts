@@ -597,12 +597,31 @@ export interface DashboardData {
   balanceByCompany: DashboardDataBalanceByCompanyItem[];
 }
 
+export type CashForecastWeeksItemIncomeDetailsItem = {
+  type?: string;
+  description?: string;
+  amount?: string;
+  date?: string;
+};
+
+export type CashForecastWeeksItemExpenseDetailsItem = {
+  type?: string;
+  description?: string;
+  amount?: string;
+  date?: string;
+};
+
 export type CashForecastWeeksItem = {
   weekStart: string;
   weekEnd: string;
   expectedIncome: string;
   expectedExpenses: string;
+  expectedIncomeInvoices: string;
+  expectedExpenseVendors: string;
+  expectedExpenseRecurring: string;
   projectedBalance: string;
+  incomeDetails: CashForecastWeeksItemIncomeDetailsItem[];
+  expenseDetails: CashForecastWeeksItemExpenseDetailsItem[];
 };
 
 export type CashForecastAlertsItem = {
@@ -720,7 +739,19 @@ export type GetDashboardParams = {
 export type GetCashForecastParams = {
   companyId?: number;
   weeks?: number;
+  /**
+   * Agrupación del pronóstico (semanal o mensual)
+   */
+  interval?: GetCashForecastInterval;
 };
+
+export type GetCashForecastInterval =
+  (typeof GetCashForecastInterval)[keyof typeof GetCashForecastInterval];
+
+export const GetCashForecastInterval = {
+  week: "week",
+  month: "month",
+} as const;
 
 export type ListTasksParams = {
   companyId?: number;

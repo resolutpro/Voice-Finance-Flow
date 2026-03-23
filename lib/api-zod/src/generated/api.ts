@@ -1102,10 +1102,15 @@ export const GetDashboardResponse = zod.object({
 });
 
 export const getCashForecastQueryWeeksDefault = 8;
+export const getCashForecastQueryIntervalDefault = `week`;
 
 export const GetCashForecastQueryParams = zod.object({
   companyId: zod.coerce.number().optional(),
   weeks: zod.coerce.number().default(getCashForecastQueryWeeksDefault),
+  interval: zod
+    .enum(["week", "month"])
+    .default(getCashForecastQueryIntervalDefault)
+    .describe("Agrupación del pronóstico (semanal o mensual)"),
 });
 
 export const GetCashForecastResponse = zod.object({
@@ -1116,7 +1121,26 @@ export const GetCashForecastResponse = zod.object({
       weekEnd: zod.string(),
       expectedIncome: zod.string(),
       expectedExpenses: zod.string(),
+      expectedIncomeInvoices: zod.string(),
+      expectedExpenseVendors: zod.string(),
+      expectedExpenseRecurring: zod.string(),
       projectedBalance: zod.string(),
+      incomeDetails: zod.array(
+        zod.object({
+          type: zod.string().optional(),
+          description: zod.string().optional(),
+          amount: zod.string().optional(),
+          date: zod.string().optional(),
+        }),
+      ),
+      expenseDetails: zod.array(
+        zod.object({
+          type: zod.string().optional(),
+          description: zod.string().optional(),
+          amount: zod.string().optional(),
+          date: zod.string().optional(),
+        }),
+      ),
     }),
   ),
   alerts: zod.array(

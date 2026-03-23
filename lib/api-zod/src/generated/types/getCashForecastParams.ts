@@ -5,8 +5,13 @@
  * Facturación, Tesorería y Previsión de Caja API
  * OpenAPI spec version: 0.1.0
  */
+import type { GetCashForecastInterval } from "./getCashForecastInterval";
 
 export type GetCashForecastParams = {
   companyId?: number;
   weeks?: number;
+  /**
+   * Agrupación del pronóstico (semanal o mensual)
+   */
+  interval?: GetCashForecastInterval;
 };

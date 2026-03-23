@@ -5,11 +5,18 @@
  * Facturación, Tesorería y Previsión de Caja API
  * OpenAPI spec version: 0.1.0
  */
+import type { CashForecastWeeksItemExpenseDetailsItem } from "./cashForecastWeeksItemExpenseDetailsItem";
+import type { CashForecastWeeksItemIncomeDetailsItem } from "./cashForecastWeeksItemIncomeDetailsItem";
 
 export type CashForecastWeeksItem = {
   weekStart: string;
   weekEnd: string;
   expectedIncome: string;
   expectedExpenses: string;
+  expectedIncomeInvoices: string;
+  expectedExpenseVendors: string;
+  expectedExpenseRecurring: string;
   projectedBalance: string;
+  incomeDetails: CashForecastWeeksItemIncomeDetailsItem[];
+  expenseDetails: CashForecastWeeksItemExpenseDetailsItem[];
 };
