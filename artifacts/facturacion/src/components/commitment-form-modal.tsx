@@ -79,7 +79,6 @@ export function CommitmentFormModal({ isOpen, onClose }: Props) {
     console.log("2. Enviando datos al servidor...");
 
     try {
-      // AQUÍ ESTÁ LA CLAVE: Añadimos companyId al payload para que el backend lo reciba
       const payload = {
         companyId: activeCompanyId,
         type,
@@ -91,22 +90,16 @@ export function CommitmentFormModal({ isOpen, onClose }: Props) {
 
       console.log("Payload:", payload);
 
-      const res = await customFetch("/api/recurring-commitments", {
+      const commitment = await customFetch("/api/recurring-commitments", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-company-id": activeCompanyId.toString(), // Lo mantenemos por si tu middleware lo usa
+          "x-company-id": activeCompanyId.toString(),
         },
         body: JSON.stringify(payload),
       });
 
-      console.log("3. Respuesta del servidor HTTP:", res.status);
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => null);
-        console.error("Error devuelto por la API:", errorData);
-        throw new Error("Error al guardar en el backend");
-      }
+      console.log("3. Compromiso guardado:", commitment);
 
       toast({
         title: "Compromiso guardado",
