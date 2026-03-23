@@ -45,6 +45,6 @@ router.use(receivablesRouter);
 router.use(payablesRouter);
 router.use(seedRouter);
 router.use(recurringCommitmentsRouter);
-router.use(reportsRouter);
+router.use("/reports", reportsRouter);
 
 export default router;
