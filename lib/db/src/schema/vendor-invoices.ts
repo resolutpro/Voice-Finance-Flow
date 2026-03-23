@@ -33,7 +33,7 @@ export const vendorInvoicesTable = pgTable("vendor_invoices", {
   supplierId: integer("supplier_id").references(() => suppliersTable.id),
   categoryId: integer("category_id").references(() => categoriesTable.id),
   invoiceNumber: text("invoice_number"),
-  status: vendorInvoiceStatusEnum("status").notNull().default("borrador"),
+  status: vendorInvoiceStatusEnum("status").notNull().default("pendiente_pago"),
   issueDate: date("issue_date").notNull(),
   dueDate: date("due_date"),
   subtotal: numeric("subtotal", { precision: 12, scale: 2 })

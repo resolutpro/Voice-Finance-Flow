@@ -162,7 +162,7 @@ function CreateVendorInvoiceModal({ isOpen, onClose, companyId }: { isOpen: bool
         taxRate: "21",
         issueDate,
         dueDate: dueDate || undefined,
-        status: "pending",
+        status: "pendiente_pago",
       }
     }, {
       onSuccess: () => {
