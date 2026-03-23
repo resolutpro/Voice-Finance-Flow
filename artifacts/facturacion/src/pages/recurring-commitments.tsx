@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   Calendar,
@@ -8,6 +8,7 @@ import {
   MoreHorizontal,
   Loader2,
   Repeat,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,8 +27,19 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CommitmentFormModal } from "@/components/commitment-form-modal";
 import { useCompany } from "@/hooks/use-company";
+import { useToast } from "@/hooks/use-toast";
 import { customFetch } from "@workspace/api-client-react";
 
 // Interfaz para TypeScript basada en la tabla que creamos en Drizzle
@@ -43,7 +55,15 @@ type RecurringCommitment = {
 
 export default function RecurringCommitments() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedCommitment, setSelectedCommitment] = useState<RecurringCommitment | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isTogglingStatus, setIsTogglingStatus] = useState(false);
+
   const { activeCompanyId } = useCompany();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   // Hacemos fetch real a nuestra nueva ruta del API
   const {
@@ -63,6 +83,90 @@ export default function RecurringCommitments() {
     },
     enabled: !!activeCompanyId, // Solo se ejecuta si hay una empresa seleccionada
   });
+
+  const handleEdit = (commitment: RecurringCommitment) => {
+    setSelectedCommitment(commitment);
+    setIsEditModalOpen(true);
+  };
+
+  const handleToggleStatus = async (commitment: RecurringCommitment) => {
+    if (!activeCompanyId) return;
+    
+    setIsTogglingStatus(true);
+    try {
+      await customFetch(
+        `/api/recurring-commitments/${commitment.id}/toggle`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-company-id": activeCompanyId.toString(),
+          },
+        }
+      );
+
+      toast({
+        title: "Estado actualizado",
+        description: commitment.active ? "Compromiso pausado" : "Compromiso activado",
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ["recurring-commitments", activeCompanyId],
+      });
+    } catch (error) {
+      console.error("Error al cambiar estado:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo cambiar el estado del compromiso.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTogglingStatus(false);
+    }
+  };
+
+  const handleDeleteClick = (commitment: RecurringCommitment) => {
+    setSelectedCommitment(commitment);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!activeCompanyId || !selectedCommitment) return;
+    
+    setIsDeleting(true);
+    try {
+      await customFetch(
+        `/api/recurring-commitments/${selectedCommitment.id}`,
+        {
+          method: "DELETE",
+          headers: {
+            "x-company-id": activeCompanyId.toString(),
+          },
+        }
+      );
+
+      toast({
+        title: "Compromiso eliminado",
+        description: "El compromiso ha sido eliminado correctamente.",
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: ["recurring-commitments", activeCompanyId],
+      });
+      
+      setIsDeleteDialogOpen(false);
+      setSelectedCommitment(null);
+    } catch (error) {
+      console.error("Error al eliminar:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar el compromiso.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="space-y-6 p-6">
@@ -163,16 +267,25 @@ export default function RecurringCommitments() {
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
+                        <Button variant="ghost" className="h-8 w-8 p-0" disabled={isTogglingStatus || isDeleting}>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>Editar</DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEdit(item)}>
+                          Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={() => handleToggleStatus(item)}
+                          disabled={isTogglingStatus}
+                        >
                           {item.active ? "Pausar" : "Activar"}
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="text-red-600">
+                        <DropdownMenuItem 
+                          className="text-red-600"
+                          onClick={() => handleDeleteClick(item)}
+                          disabled={isDeleting}
+                        >
                           Eliminar
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -185,13 +298,60 @@ export default function RecurringCommitments() {
         )}
       </Card>
 
-      {/* Renderizamos el modal de creación si isModalOpen es true */}
-      {isModalOpen && (
-        <CommitmentFormModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-        />
-      )}
+      {/* Modal de creación */}
+      <CommitmentFormModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
+
+      {/* Modal de edición */}
+      <CommitmentFormModal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setSelectedCommitment(null);
+        }}
+        commitmentId={selectedCommitment?.id}
+        initialData={selectedCommitment ? {
+          id: selectedCommitment.id,
+          type: selectedCommitment.type,
+          title: selectedCommitment.title,
+          amount: selectedCommitment.amount,
+          frequency: selectedCommitment.frequency,
+          startDate: selectedCommitment.nextDueDate,
+        } : undefined}
+      />
+
+      {/* Diálogo de confirmación de eliminación */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar compromiso</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que quieres eliminar "{selectedCommitment?.title}"? Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                "Eliminar"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

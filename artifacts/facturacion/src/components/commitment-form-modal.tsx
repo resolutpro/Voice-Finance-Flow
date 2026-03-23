@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -26,9 +26,23 @@ import { Loader2 } from "lucide-react";
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  commitmentId?: number;
+  initialData?: {
+    id?: number;
+    type: string;
+    title: string;
+    amount: string;
+    frequency: string;
+    startDate: string;
+  };
 }
 
-export function CommitmentFormModal({ isOpen, onClose }: Props) {
+export function CommitmentFormModal({
+  isOpen,
+  onClose,
+  commitmentId,
+  initialData,
+}: Props) {
   const [type, setType] = useState("gasto");
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
@@ -39,6 +53,26 @@ export function CommitmentFormModal({ isOpen, onClose }: Props) {
   const queryClient = useQueryClient();
   const { activeCompanyId } = useCompany();
   const { toast } = useToast();
+
+  const isEditing = !!commitmentId && !!initialData;
+
+  // Cargar datos iniciales cuando se abre el modal
+  useEffect(() => {
+    if (isOpen && initialData) {
+      setType(initialData.type || "gasto");
+      setTitle(initialData.title || "");
+      setAmount(initialData.amount || "");
+      setFrequency(initialData.frequency || "mensual");
+      setStartDate(initialData.startDate || "");
+    } else if (isOpen) {
+      // Reset para creación
+      setType("gasto");
+      setTitle("");
+      setAmount("");
+      setFrequency("mensual");
+      setStartDate("");
+    }
+  }, [isOpen, initialData]);
 
   // Cambiamos el evento del formulario por un onClick directo
   const handleSave = async (e: React.MouseEvent) => {
@@ -90,21 +124,44 @@ export function CommitmentFormModal({ isOpen, onClose }: Props) {
 
       console.log("Payload:", payload);
 
-      const commitment = await customFetch("/api/recurring-commitments", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-company-id": activeCompanyId.toString(),
-        },
-        body: JSON.stringify(payload),
-      });
+      if (isEditing && commitmentId) {
+        // Actualizar
+        const commitment = await customFetch(
+          `/api/recurring-commitments/${commitmentId}`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "x-company-id": activeCompanyId.toString(),
+            },
+            body: JSON.stringify(payload),
+          }
+        );
 
-      console.log("3. Compromiso guardado:", commitment);
+        console.log("3. Compromiso actualizado:", commitment);
 
-      toast({
-        title: "Compromiso guardado",
-        description: "El compromiso recurrente ha sido creado con éxito.",
-      });
+        toast({
+          title: "Compromiso actualizado",
+          description: "Los cambios han sido guardados con éxito.",
+        });
+      } else {
+        // Crear
+        const commitment = await customFetch("/api/recurring-commitments", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-company-id": activeCompanyId.toString(),
+          },
+          body: JSON.stringify(payload),
+        });
+
+        console.log("3. Compromiso guardado:", commitment);
+
+        toast({
+          title: "Compromiso guardado",
+          description: "El compromiso recurrente ha sido creado con éxito.",
+        });
+      }
 
       queryClient.invalidateQueries({
         queryKey: ["recurring-commitments", activeCompanyId],
@@ -132,7 +189,9 @@ export function CommitmentFormModal({ isOpen, onClose }: Props) {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Nuevo Compromiso Recurrente</DialogTitle>
+          <DialogTitle>
+            {isEditing ? "Editar Compromiso Recurrente" : "Nuevo Compromiso Recurrente"}
+          </DialogTitle>
         </DialogHeader>
 
         {/* Hemos quitado la etiqueta <form> y los 'required' de HTML5 */}
