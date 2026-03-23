@@ -20,6 +20,7 @@ import payablesRouter from "./payables";
 import seedRouter from "./seed";
 import productsRouter from "./products";
 import recurringCommitmentsRouter from "./recurring-commitments";
+import reportsRouter from "./reports";
 
 const router: IRouter = Router();
 
@@ -44,5 +45,6 @@ router.use(receivablesRouter);
 router.use(payablesRouter);
 router.use(seedRouter);
 router.use(recurringCommitmentsRouter);
+router.use(reportsRouter);
 
 export default router;

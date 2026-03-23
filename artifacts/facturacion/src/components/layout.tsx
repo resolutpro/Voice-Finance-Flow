@@ -13,6 +13,7 @@ import {
   Menu,
   Repeat,
   ShieldAlert,
+  BarChart,
 } from "lucide-react";
 import { useCompany } from "@/hooks/use-company";
 import { useListCompanies, useSeedData } from "@workspace/api-client-react";
@@ -43,6 +44,11 @@ const navItems = [
     variant: "ghost",
   },
   { href: "/tasks", label: "Tareas", icon: CheckSquare },
+  {
+    label: "Informes y Exportación",
+    href: "/informes",
+    icon: BarChart,
+  },
   { href: "/settings", label: "Configuración", icon: Building2 },
 ];
 
