@@ -5,6 +5,60 @@
  * Facturación, Tesorería y Previsión de Caja API
  * OpenAPI spec version: 0.1.0
  */
+export type AlertItemType = (typeof AlertItemType)[keyof typeof AlertItemType];
+
+export const AlertItemType = {
+  cobro: "cobro",
+  pago: "pago",
+} as const;
+
+export interface AlertItem {
+  id: number;
+  type: AlertItemType;
+  document: string;
+  entity: string;
+  amount: number;
+  dueDate: string;
+  daysOverdue: number;
+}
+
+export interface AlertsCollection {
+  overdue: AlertItem[];
+  thisWeek: AlertItem[];
+  thisMonth: AlertItem[];
+}
+
+export interface AgingTiers {
+  noVencido: number;
+  dias30: number;
+  dias60: number;
+  dias90: number;
+  mas90: number;
+}
+
+export interface DebtEntity {
+  name: string;
+  amount: number;
+}
+
+export type DebtAnalysisDataAging = {
+  receivables: AgingTiers;
+  payables: AgingTiers;
+};
+
+export type DebtAnalysisDataSummary = {
+  totalPendingReceivables: number;
+  totalPendingPayables: number;
+};
+
+export interface DebtAnalysisData {
+  alerts?: AlertsCollection;
+  aging: DebtAnalysisDataAging;
+  topDebtors: DebtEntity[];
+  topCreditors: DebtEntity[];
+  summary: DebtAnalysisDataSummary;
+}
+
 export interface RecurringCommitment {
   id: number;
   companyId: number;
@@ -574,6 +628,13 @@ export interface VoiceParseResult {
   preview?: VoiceParseResultPreview;
   message: string;
 }
+
+export type GetDebtAnalysisParams = {
+  /**
+   * Filtrar por ID de la empresa
+   */
+  companyId?: number;
+};
 
 export type ListRecurringCommitmentsParams = {
   companyId: number;

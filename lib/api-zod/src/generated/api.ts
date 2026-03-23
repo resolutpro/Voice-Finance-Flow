@@ -7,6 +7,88 @@
  */
 import * as zod from "zod";
 
+/**
+ * @summary Obtener análisis de deuda y cartera (Aging)
+ */
+export const GetDebtAnalysisQueryParams = zod.object({
+  companyId: zod.coerce
+    .number()
+    .optional()
+    .describe("Filtrar por ID de la empresa"),
+});
+
+export const GetDebtAnalysisResponse = zod.object({
+  alerts: zod
+    .object({
+      overdue: zod.array(
+        zod.object({
+          id: zod.number(),
+          type: zod.enum(["cobro", "pago"]),
+          document: zod.string(),
+          entity: zod.string(),
+          amount: zod.number(),
+          dueDate: zod.string(),
+          daysOverdue: zod.number(),
+        }),
+      ),
+      thisWeek: zod.array(
+        zod.object({
+          id: zod.number(),
+          type: zod.enum(["cobro", "pago"]),
+          document: zod.string(),
+          entity: zod.string(),
+          amount: zod.number(),
+          dueDate: zod.string(),
+          daysOverdue: zod.number(),
+        }),
+      ),
+      thisMonth: zod.array(
+        zod.object({
+          id: zod.number(),
+          type: zod.enum(["cobro", "pago"]),
+          document: zod.string(),
+          entity: zod.string(),
+          amount: zod.number(),
+          dueDate: zod.string(),
+          daysOverdue: zod.number(),
+        }),
+      ),
+    })
+    .optional(),
+  aging: zod.object({
+    receivables: zod.object({
+      noVencido: zod.number(),
+      dias30: zod.number(),
+      dias60: zod.number(),
+      dias90: zod.number(),
+      mas90: zod.number(),
+    }),
+    payables: zod.object({
+      noVencido: zod.number(),
+      dias30: zod.number(),
+      dias60: zod.number(),
+      dias90: zod.number(),
+      mas90: zod.number(),
+    }),
+  }),
+  topDebtors: zod.array(
+    zod.object({
+      name: zod.string(),
+      amount: zod.number(),
+    }),
+  ),
+  topCreditors: zod.array(
+    zod.object({
+      name: zod.string(),
+      amount: zod.number(),
+    }),
+  ),
+  summary: zod.object({
+    totalPendingReceivables: zod.number(),
+    totalPendingPayables: zod.number(),
+  }),
+});
+
 export const ListRecurringCommitmentsQueryParams = zod.object({
   companyId: zod.coerce.number(),
 });

@@ -12,6 +12,7 @@ import {
   Bell,
   Menu,
   Repeat,
+  ShieldAlert,
 } from "lucide-react";
 import { useCompany } from "@/hooks/use-company";
 import { useListCompanies, useSeedData } from "@workspace/api-client-react";
@@ -26,6 +27,11 @@ import { UserAvatarMenu } from "./user-avatar-menu";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  {
+    label: "Control de Cartera", // O "Deuda y Riesgo"
+    href: "/debt-control",
+    icon: ShieldAlert, 
+  },
   { href: "/invoices", label: "Facturas", icon: FileText },
   { href: "/purchases", label: "Compras", icon: ShoppingBag },
   { href: "/treasury", label: "Tesorería", icon: Landmark },

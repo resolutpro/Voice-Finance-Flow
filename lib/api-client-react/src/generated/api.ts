@@ -30,6 +30,7 @@ import type {
   CompanyInput,
   CreateProductsBulk201,
   DashboardData,
+  DebtAnalysisData,
   DeleteInvoice200,
   DeleteProject200,
   DeleteTask200,
@@ -37,6 +38,7 @@ import type {
   ExpenseInput,
   GetCashForecastParams,
   GetDashboardParams,
+  GetDebtAnalysisParams,
   GetNextInvoiceNumber200,
   GetNextInvoiceNumberParams,
   HealthStatus,
@@ -79,6 +81,100 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+/**
+ * @summary Obtener análisis de deuda y cartera (Aging)
+ */
+export const getGetDebtAnalysisUrl = (params?: GetDebtAnalysisParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/debt-analysis?${stringifiedParams}`
+    : `/api/dashboard/debt-analysis`;
+};
+
+export const getDebtAnalysis = async (
+  params?: GetDebtAnalysisParams,
+  options?: RequestInit,
+): Promise<DebtAnalysisData> => {
+  return customFetch<DebtAnalysisData>(getGetDebtAnalysisUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDebtAnalysisQueryKey = (params?: GetDebtAnalysisParams) => {
+  return [`/api/dashboard/debt-analysis`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetDebtAnalysisQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDebtAnalysis>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDebtAnalysisParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDebtAnalysis>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDebtAnalysisQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDebtAnalysis>>> = ({
+    signal,
+  }) => getDebtAnalysis(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDebtAnalysis>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDebtAnalysisQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDebtAnalysis>>
+>;
+export type GetDebtAnalysisQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Obtener análisis de deuda y cartera (Aging)
+ */
+
+export function useGetDebtAnalysis<
+  TData = Awaited<ReturnType<typeof getDebtAnalysis>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetDebtAnalysisParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDebtAnalysis>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDebtAnalysisQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListRecurringCommitmentsUrl = (
   params: ListRecurringCommitmentsParams,

@@ -41,6 +41,27 @@ tags:
     description: Voice command processing
 
 paths:
+  /dashboard/debt-analysis:
+    get:
+      summary: Obtener análisis de deuda y cartera (Aging)
+      operationId: getDebtAnalysis
+      tags:
+        - Dashboard
+      parameters:
+        - in: query
+          name: companyId
+          schema:
+            type: integer
+          required: false
+          description: Filtrar por ID de la empresa
+      responses:
+        '200':
+          description: Análisis detallado de cobros y pagos pendientes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebtAnalysisData'
+      
   /recurring-commitments:
     get:
       operationId: listRecurringCommitments
@@ -1031,6 +1052,98 @@ paths:
 
 components:
   schemas:
+    AlertItem:
+      type: object
+      required: [id, type, document, entity, amount, dueDate, daysOverdue]
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [cobro, pago]
+        document:
+          type: string
+        entity:
+          type: string
+        amount:
+          type: number
+        dueDate:
+          type: string
+        daysOverdue:
+          type: integer
+
+    AlertsCollection:
+      type: object
+      required: [overdue, thisWeek, thisMonth]
+      properties:
+        overdue:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertItem'
+        thisWeek:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertItem'
+        thisMonth:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertItem'
+          
+    AgingTiers:
+      type: object
+      required: [noVencido, dias30, dias60, dias90, mas90]
+      properties:
+        noVencido:
+          type: number
+        dias30:
+          type: number
+        dias60:
+          type: number
+        dias90:
+          type: number
+        mas90:
+          type: number
+
+    DebtEntity:
+      type: object
+      required: [name, amount]
+      properties:
+        name:
+          type: string
+        amount:
+          type: number
+
+    DebtAnalysisData:
+      type: object
+      required: [aging, topDebtors, topCreditors, summary]
+      properties:
+        alerts:  # <-- Y añade este bloque
+          $ref: '#/components/schemas/AlertsCollection'
+        aging:
+          type: object
+          required: [receivables, payables]
+          properties:
+            receivables:
+              $ref: '#/components/schemas/AgingTiers'
+            payables:
+              $ref: '#/components/schemas/AgingTiers'
+        topDebtors:
+          type: array
+          items:
+            $ref: '#/components/schemas/DebtEntity'
+        topCreditors:
+          type: array
+          items:
+            $ref: '#/components/schemas/DebtEntity'
+        summary:
+          type: object
+          required: [totalPendingReceivables, totalPendingPayables]
+          properties:
+            totalPendingReceivables:
+              type: number
+            totalPendingPayables:
+              type: number
+          
     RecurringCommitment:
       type: object
       properties:
