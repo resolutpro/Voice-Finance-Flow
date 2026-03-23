@@ -13,3 +13,4 @@ export * from "./users";
 export * from "./receivables";
 export * from "./payables";
 export * from "./products";
+export * from "./recurring-commitments";

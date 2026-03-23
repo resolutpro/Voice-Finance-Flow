@@ -21,6 +21,7 @@ import ForecastPage from "@/pages/forecast";
 import TasksPage from "@/pages/tasks";
 import NotFound from "@/pages/not-found";
 import SettingsPage from "@/pages/settings";
+import RecurringCommitments from "@/pages/recurring-commitments";
 
 const queryClient = new QueryClient();
 
@@ -43,6 +44,7 @@ function PrivateApp() {
           <Route path="/forecast" component={ForecastPage} />
           <Route path="/tasks" component={TasksPage} />
           <Route path="/settings" component={SettingsPage} />
+          <Route path="/compromisos" component={RecurringCommitments} />
           <Route component={NotFound} />
         </Switch>
       </Layout>

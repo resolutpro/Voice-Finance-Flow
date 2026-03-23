@@ -11,6 +11,7 @@ import {
   Building2,
   Bell,
   Menu,
+  Repeat,
 } from "lucide-react";
 import { useCompany } from "@/hooks/use-company";
 import { useListCompanies, useSeedData } from "@workspace/api-client-react";
@@ -29,6 +30,12 @@ const navItems = [
   { href: "/purchases", label: "Compras", icon: ShoppingBag },
   { href: "/treasury", label: "Tesorería", icon: Landmark },
   { href: "/forecast", label: "Previsión", icon: TrendingUp },
+  {
+    label: "Gastos recurrentes",
+    href: "/compromisos",
+    icon: Repeat,
+    variant: "ghost",
+  },
   { href: "/tasks", label: "Tareas", icon: CheckSquare },
   { href: "/settings", label: "Configuración", icon: Building2 },
 ];
