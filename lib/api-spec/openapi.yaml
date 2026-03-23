@@ -41,6 +41,42 @@ tags:
     description: Voice command processing
 
 paths:
+  /recurring-commitments:
+    get:
+      operationId: listRecurringCommitments
+      tags: [recurring-commitments]
+      parameters:
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of recurring commitments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecurringCommitment"
+    post:
+      operationId: createRecurringCommitment
+      tags: [recurring-commitments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecurringCommitmentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecurringCommitment"
+      
   /products/bulk:
     post:
       operationId: createProductsBulk
@@ -995,6 +1031,48 @@ paths:
 
 components:
   schemas:
+    RecurringCommitment:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        type:
+          type: string
+        title:
+          type: string
+        amount:
+          type: string
+        frequency:
+          type: string
+        startDate:
+          type: string
+        nextDueDate:
+          type: string
+        active:
+          type: boolean
+      required: [id, companyId, type, title, amount, frequency, startDate, nextDueDate, active]
+
+    RecurringCommitmentInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        type:
+          type: string
+        title:
+          type: string
+        amount:
+          type: string
+        frequency:
+          type: string
+        startDate:
+          type: string
+        nextDueDate:
+          type: string
+      required: [companyId, type, title, amount, frequency, startDate]
+           
     HealthStatus:
       type: object
       properties:

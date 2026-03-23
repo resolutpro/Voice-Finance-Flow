@@ -5,6 +5,28 @@
  * Facturación, Tesorería y Previsión de Caja API
  * OpenAPI spec version: 0.1.0
  */
+export interface RecurringCommitment {
+  id: number;
+  companyId: number;
+  type: string;
+  title: string;
+  amount: string;
+  frequency: string;
+  startDate: string;
+  nextDueDate: string;
+  active: boolean;
+}
+
+export interface RecurringCommitmentInput {
+  companyId: number;
+  type: string;
+  title: string;
+  amount: string;
+  frequency: string;
+  startDate: string;
+  nextDueDate?: string;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -552,6 +574,10 @@ export interface VoiceParseResult {
   preview?: VoiceParseResultPreview;
   message: string;
 }
+
+export type ListRecurringCommitmentsParams = {
+  companyId: number;
+};
 
 export type CreateProductsBulk201 = {
   success: boolean;

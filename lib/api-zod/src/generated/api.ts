@@ -7,6 +7,35 @@
  */
 import * as zod from "zod";
 
+export const ListRecurringCommitmentsQueryParams = zod.object({
+  companyId: zod.coerce.number(),
+});
+
+export const ListRecurringCommitmentsResponseItem = zod.object({
+  id: zod.number(),
+  companyId: zod.number(),
+  type: zod.string(),
+  title: zod.string(),
+  amount: zod.string(),
+  frequency: zod.string(),
+  startDate: zod.string(),
+  nextDueDate: zod.string(),
+  active: zod.boolean(),
+});
+export const ListRecurringCommitmentsResponse = zod.array(
+  ListRecurringCommitmentsResponseItem,
+);
+
+export const CreateRecurringCommitmentBody = zod.object({
+  companyId: zod.number(),
+  type: zod.string(),
+  title: zod.string(),
+  amount: zod.string(),
+  frequency: zod.string(),
+  startDate: zod.string(),
+  nextDueDate: zod.string().optional(),
+});
+
 /**
  * @summary Upload multiple products
  */

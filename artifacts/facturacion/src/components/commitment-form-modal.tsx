@@ -79,19 +79,34 @@ export function CommitmentFormModal({ isOpen, onClose }: Props) {
     console.log("2. Enviando datos al servidor...");
 
     try {
-      const payload = { type, title, amount, frequency, startDate };
+      // AQUÍ ESTÁ LA CLAVE: Añadimos companyId al payload para que el backend lo reciba
+      const payload = {
+        companyId: activeCompanyId,
+        type,
+        title,
+        amount,
+        frequency,
+        startDate,
+      };
+
       console.log("Payload:", payload);
 
-      const result = await customFetch("/api/recurring-commitments", {
+      const res = await customFetch("/api/recurring-commitments", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-company-id": activeCompanyId.toString(), // Añadimos la cabecera
+          "x-company-id": activeCompanyId.toString(), // Lo mantenemos por si tu middleware lo usa
         },
         body: JSON.stringify(payload),
       });
 
-      console.log("3. Respuesta del servidor:", result);
+      console.log("3. Respuesta del servidor HTTP:", res.status);
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        console.error("Error devuelto por la API:", errorData);
+        throw new Error("Error al guardar en el backend");
+      }
 
       toast({
         title: "Compromiso guardado",
@@ -110,11 +125,9 @@ export function CommitmentFormModal({ isOpen, onClose }: Props) {
       onClose();
     } catch (error) {
       console.error("4. Excepción capturada:", error);
-      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
-      console.error("Detalles del error:", errorMessage);
       toast({
         title: "Error al guardar",
-        description: errorMessage || "Revisa la consola para más detalles.",
+        description: "Revisa la consola para más detalles.",
         variant: "destructive",
       });
     } finally {

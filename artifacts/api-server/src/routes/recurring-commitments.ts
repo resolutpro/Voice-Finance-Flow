@@ -5,61 +5,45 @@ import { eq } from "drizzle-orm";
 
 const router = Router();
 
-// GET /api/recurring-commitments -> Obtiene los registros de la empresa activa
-router.get("/", async (req, res) => {
+router.get("/recurring-commitments", async (req, res) => {
   try {
-    const companyId = Number(req.headers["x-company-id"]);
-
+    const companyIdHeader = req.headers["x-company-id"];
+    const companyId = companyIdHeader
+      ? parseInt(companyIdHeader as string)
+      : undefined;
     if (!companyId) {
-      return res.status(400).json({ error: "Company ID is required" });
+      return res.status(400).json({ message: "companyId is required" });
     }
 
-    const commitments = await db
-      .select()
-      .from(recurringCommitmentsTable)
-      .where(eq(recurringCommitmentsTable.companyId, companyId))
-      .orderBy(recurringCommitmentsTable.nextDueDate);
+    const commitments = await db.query.recurringCommitmentsTable.findMany({
+      where: eq(recurringCommitmentsTable.companyId, companyId),
+      orderBy: (commitments, { desc }) => [desc(commitments.createdAt)],
+    });
 
     res.json(commitments);
   } catch (error) {
-    console.error("Error fetching recurring commitments:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("Error al obtener compromisos recurrentes:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
-// POST /api/recurring-commitments -> Crea un nuevo compromiso
-router.post("/", async (req, res) => {
+// Crear un nuevo compromiso recurrente
+router.post("/recurring-commitments", async (req, res) => {
   try {
-    const companyId = Number(req.headers["x-company-id"]);
-    if (!companyId)
-      return res.status(400).json({ error: "Company ID is required" });
-
-    const { type, title, amount, frequency, startDate } = req.body;
-
-    if (!title || !amount || !frequency || !startDate) {
-      return res.status(400).json({ error: "Faltan campos obligatorios" });
-    }
-
-    // Insertamos en la Base de Datos
-    // Como simplificación inicial, asignamos el primer "nextDueDate" igual a la fecha de inicio
-    const newCommitment = await db
+    const [commitment] = await db
       .insert(recurringCommitmentsTable)
       .values({
-        companyId,
-        type,
-        title,
-        amount: amount.toString(), // Drizzle requiere que los 'numeric' vayan en string para evitar pérdida de precisión
-        frequency,
-        startDate: new Date(startDate).toISOString().split("T")[0],
-        nextDueDate: new Date(startDate).toISOString().split("T")[0],
-        active: true,
+        ...req.body,
+        // Convertimos los strings a fechas válidas para la base de datos
+        startDate: new Date(req.body.startDate),
+        nextDueDate: new Date(req.body.nextDueDate || req.body.startDate),
       })
       .returning();
 
-    res.status(201).json(newCommitment[0]);
+    res.status(201).json(commitment);
   } catch (error) {
-    console.error("Error al crear el compromiso recurrente:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+    console.error("Error al crear compromiso recurrente:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
