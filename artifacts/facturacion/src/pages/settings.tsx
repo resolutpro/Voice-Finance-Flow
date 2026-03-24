@@ -108,10 +108,11 @@ export default function SettingsPage() {
   // --- MUTACIONES EMPRESAS ---
   const createCompanyMutation = useMutation({
     mutationFn: async (newCompany: typeof companyFormData) => {
+      const { color, ...rest } = newCompany;
       const res = await fetch("/api/companies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newCompany),
+        body: JSON.stringify({ ...rest, themeColor: color }),
       });
       if (!res.ok) throw new Error("Error al crear");
       return res.json();
@@ -154,10 +155,11 @@ export default function SettingsPage() {
       id: number;
       formData: typeof companyFormData;
     }) => {
+      const { color, ...rest } = data.formData;
       const res = await fetch(`/api/companies/${data.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data.formData),
+        body: JSON.stringify({ ...rest, themeColor: color }),
       });
       if (!res.ok) throw new Error("Error al actualizar");
       return res.json();

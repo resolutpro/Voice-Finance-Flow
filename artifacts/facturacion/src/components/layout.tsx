@@ -78,13 +78,17 @@ export function Layout({ children }: { children: ReactNode }) {
 
   const activeCompany = companies?.find((c) => c.id === activeCompanyId);
   const dynamicLogo = activeCompany?.logo || null;
+  const themeColor = activeCompany?.themeColor;
 
   // TAREA 3: Inyección del color de la marca en el background del header.
   // Usamos el 'themeColor' guardado en la DB como un tintado suave (opacidad 10/255 -> ~4%).
   // Inyección del color de la marca en el background del header.
 
   return (
-    <div className="min-h-screen bg-background flex flex-col md:flex-row border-t-[6px] border-primary transition-colors duration-500">
+    <div
+      className="min-h-screen bg-background flex flex-col md:flex-row transition-colors duration-500 ease-in-out"
+      style={themeColor ? { backgroundColor: themeColor } : undefined}
+    >
       {/* Sidebar */}
       <aside className="w-full md:w-64 bg-card border-r border-border flex-shrink-0 md:h-screen md:sticky md:top-0 z-10 hidden md:flex flex-col">
         <div className="h-20 flex items-center px-6 border-b border-border/50 relative overflow-hidden bg-primary/5">
