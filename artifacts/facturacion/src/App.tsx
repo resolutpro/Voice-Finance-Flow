@@ -24,6 +24,7 @@ import SettingsPage from "@/pages/settings";
 import RecurringCommitments from "@/pages/recurring-commitments";
 import DebtControlPage from "./pages/debt-control";
 import ReportsPage from "@/pages/informes";
+import AccountingPage from "@/pages/contabilidad";
 
 const queryClient = new QueryClient();
 
@@ -49,6 +50,7 @@ function PrivateApp() {
           <Route path="/compromisos" component={RecurringCommitments} />
           <Route path="/debt-control" component={DebtControlPage} />
           <Route path="/informes" component={ReportsPage} />
+          <Route path="/contabilidad" component={AccountingPage} />
           <Route component={NotFound} />
         </Switch>
       </Layout>

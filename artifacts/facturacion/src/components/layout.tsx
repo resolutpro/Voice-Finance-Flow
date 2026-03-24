@@ -14,6 +14,7 @@ import {
   Repeat,
   ShieldAlert,
   BarChart,
+  Calculator,
 } from "lucide-react";
 import { useCompany } from "@/hooks/use-company";
 import { useListCompanies, useSeedData } from "@workspace/api-client-react";
@@ -28,21 +29,24 @@ import { UserAvatarMenu } from "./user-avatar-menu";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  {
-    label: "Control de Cartera", // O "Deuda y Riesgo"
-    href: "/debt-control",
-    icon: ShieldAlert, 
-  },
-  { href: "/invoices", label: "Facturas", icon: FileText },
-  { href: "/purchases", label: "Compras", icon: ShoppingBag },
-  { href: "/treasury", label: "Tesorería", icon: Landmark },
-  { href: "/forecast", label: "Previsión", icon: TrendingUp },
+  { href: "/invoices", label: "Facturación", icon: FileText },
   {
     label: "Gastos recurrentes",
     href: "/compromisos",
     icon: Repeat,
     variant: "ghost",
   },
+  { href: "/purchases", label: "Compras", icon: ShoppingBag },
+  { href: "/treasury", label: "Tesorería", icon: Landmark },
+  {
+    label: "Control de Cartera", // O "Deuda y Riesgo"
+    href: "/debt-control",
+    icon: ShieldAlert,
+  },
+
+  { href: "/forecast", label: "Previsión", icon: TrendingUp },
+  { href: "/contabilidad", label: "Contabilidad", icon: Calculator },
+
   { href: "/tasks", label: "Tareas", icon: CheckSquare },
   {
     label: "Informes y Exportación",
