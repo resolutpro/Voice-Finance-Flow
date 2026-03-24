@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   BarChart,
   Calculator,
+  ChevronLeft,
 } from "lucide-react";
 import { useCompany } from "@/hooks/use-company";
 import { useListCompanies, useSeedData } from "@workspace/api-client-react";
@@ -59,6 +60,7 @@ const navItems = [
 export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { activeCompanyId, setActiveCompanyId } = useCompany();
   const { data: companies } = useListCompanies();
   const seedMutation = useSeedData();
@@ -91,10 +93,13 @@ export function Layout({ children }: { children: ReactNode }) {
       style={themeColor ? { backgroundColor: themeColor } : undefined}
     >
       {/* Sidebar */}
-      <aside className="w-full md:w-64 bg-white border-r border-border flex-shrink-0 md:h-screen md:sticky md:top-0 z-10 hidden md:flex flex-col">
-        <div className="h-20 flex items-center px-6 border-b border-border/50 relative overflow-hidden bg-white">
-          <div className="flex items-center gap-3 relative z-10 w-full">
-            <div className="w-16 h-16 rounded-xl bg-white shadow-sm border flex items-center justify-center p-1 shrink-0">
+      <aside className={cn(
+        "w-full md:bg-white border-r border-border flex-shrink-0 md:h-screen md:sticky md:top-0 z-10 hidden md:flex flex-col transition-all duration-300",
+        sidebarCollapsed ? "md:w-20" : "md:w-64"
+      )}>
+        <div className="h-20 flex items-center px-6 border-b border-border/50 relative overflow-hidden bg-white justify-center">
+          <div className={cn("flex items-center gap-3 relative z-10", sidebarCollapsed ? "w-full justify-center" : "w-full")}>
+            <div className="w-12 h-12 rounded-xl bg-white shadow-sm border flex items-center justify-center p-1 shrink-0">
               {dynamicLogo ? (
                 <img
                   src={dynamicLogo}
@@ -102,7 +107,7 @@ export function Layout({ children }: { children: ReactNode }) {
                   className="w-full h-full object-contain"
                 />
               ) : (
-                <Landmark className="w-10 h-10 text-primary" />
+                <Landmark className="w-7 h-7 text-primary" />
               )}
             </div>
           </div>
@@ -135,7 +140,7 @@ export function Layout({ children }: { children: ReactNode }) {
                       : "text-muted-foreground group-hover:text-foreground",
                   )}
                 />
-                {item.label}
+                {!sidebarCollapsed && item.label}
               </Link>
             );
           })}
@@ -150,6 +155,9 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-4 flex-1 h-full px-2 bg-white transition-colors">
             <button className="md:hidden p-2 text-muted-foreground" onClick={() => setSidebarOpen(!sidebarOpen)}>
               <Menu className="w-6 h-6" />
+            </button>
+            <button className="hidden md:block p-2 text-muted-foreground hover:text-foreground" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
+              <ChevronLeft className={cn("w-6 h-6 transition-transform duration-300", sidebarCollapsed && "rotate-180")} />
             </button>
             <div className="flex items-center gap-2">
               {dynamicLogo && (
