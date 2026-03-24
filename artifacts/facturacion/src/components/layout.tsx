@@ -9,7 +9,6 @@ import {
   TrendingUp,
   CheckSquare,
   Building2,
-  Bell,
   Menu,
   Repeat,
   ShieldAlert,
@@ -94,8 +93,8 @@ export function Layout({ children }: { children: ReactNode }) {
     >
       {/* Sidebar */}
       <aside className={cn(
-        "w-full md:bg-white border-r border-border flex-shrink-0 md:h-screen md:sticky md:top-0 z-10 hidden md:flex flex-col transition-all duration-300",
-        sidebarCollapsed ? "md:w-20" : "md:w-64"
+        "md:bg-white border-r border-border flex-shrink-0 md:h-screen md:sticky md:top-0 z-10 hidden md:flex flex-col transition-all duration-300 overflow-hidden",
+        sidebarCollapsed ? "md:w-0" : "md:w-64"
       )}>
         <div className="h-20 flex items-center px-6 border-b border-border/50 relative overflow-hidden bg-white justify-center">
           <div className={cn("flex items-center gap-3 relative z-10", sidebarCollapsed ? "w-full justify-center" : "w-full")}>
@@ -207,10 +206,6 @@ export function Layout({ children }: { children: ReactNode }) {
                 ))}
               </Select>
             </div>
-
-            <button className="w-10 h-10 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:bg-secondary transition-colors">
-              <Bell className="w-5 h-5" />
-            </button>
 
             {/* TAREA 1: Reemplazamos el placeholder US por el nuevo Menú de Usuario interactivo */}
             <UserAvatarMenu />
