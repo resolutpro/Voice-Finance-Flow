@@ -58,6 +58,7 @@ const navItems = [
 
 export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { activeCompanyId, setActiveCompanyId } = useCompany();
   const { data: companies } = useListCompanies();
   const seedMutation = useSeedData();
@@ -90,10 +91,10 @@ export function Layout({ children }: { children: ReactNode }) {
       style={themeColor ? { backgroundColor: themeColor } : undefined}
     >
       {/* Sidebar */}
-      <aside className="w-full md:w-64 bg-card border-r border-border flex-shrink-0 md:h-screen md:sticky md:top-0 z-10 hidden md:flex flex-col">
-        <div className="h-20 flex items-center px-6 border-b border-border/50 relative overflow-hidden bg-primary/5">
+      <aside className="w-full md:w-64 bg-white border-r border-border flex-shrink-0 md:h-screen md:sticky md:top-0 z-10 hidden md:flex flex-col">
+        <div className="h-20 flex items-center px-6 border-b border-border/50 relative overflow-hidden bg-white">
           <div className="flex items-center gap-3 relative z-10 w-full">
-            <div className="w-10 h-10 rounded-xl bg-white shadow-sm border flex items-center justify-center p-1 shrink-0">
+            <div className="w-16 h-16 rounded-xl bg-white shadow-sm border flex items-center justify-center p-1 shrink-0">
               {dynamicLogo ? (
                 <img
                   src={dynamicLogo}
@@ -101,12 +102,9 @@ export function Layout({ children }: { children: ReactNode }) {
                   className="w-full h-full object-contain"
                 />
               ) : (
-                <Landmark className="w-6 h-6 text-primary" />
+                <Landmark className="w-10 h-10 text-primary" />
               )}
             </div>
-            <span className="font-display font-bold text-lg tracking-tight truncate text-foreground">
-              {activeCompany ? activeCompany.name : "FinanzasPro"}
-            </span>
           </div>
         </div>
 
@@ -147,10 +145,10 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Header TAREA 3: Inyectamos el tintado de color en la sección izquierda del header */}
-        <header className="h-16 bg-card/80 backdrop-blur-md border-b border-border/50 sticky top-0 z-10 px-4 md:px-8 flex items-center justify-between">
-          {/* SECCIÓN IZQUIERDA: Usamos bg-primary/5 que ahora funcionará perfecto con tu HEX */}
-          <div className="flex items-center gap-4 flex-1 h-full px-2 bg-primary/5 border-b-2 border-primary/20 transition-colors">
-            <button className="md:hidden p-2 text-muted-foreground">
+        <header className="h-16 bg-white backdrop-blur-md border-b border-border/50 sticky top-0 z-10 px-4 md:px-8 flex items-center justify-between">
+          {/* SECCIÓN IZQUIERDA: Usamos bg-white que ahora funcionará perfecto con tu HEX */}
+          <div className="flex items-center gap-4 flex-1 h-full px-2 bg-white transition-colors">
+            <button className="md:hidden p-2 text-muted-foreground" onClick={() => setSidebarOpen(!sidebarOpen)}>
               <Menu className="w-6 h-6" />
             </button>
             <div className="flex items-center gap-2">
@@ -176,7 +174,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
 
           {/* SECCIÓN DERECHA: Controles */}
-          <div className="flex items-center gap-4 pl-4 border-l">
+          <div className="hidden md:flex items-center gap-4 pl-4 border-l">
             {/* TAREA 2: Selector de empresa más prominente y con ancho suficiente para el nombre completo */}
             <div className="flex items-center gap-2 bg-primary/10 rounded-xl px-2 py-1 border border-primary/20 transition-colors">
               <Building2 className="w-4 h-4 text-primary ml-2 hidden sm:block" />
@@ -210,6 +208,45 @@ export function Layout({ children }: { children: ReactNode }) {
             <UserAvatarMenu />
           </div>
         </header>
+
+        {/* Mobile Sidebar */}
+        {sidebarOpen && (
+          <nav className="md:hidden bg-white border-b border-border">
+            <div className="p-4 space-y-1">
+              {navItems.map((item) => {
+                const isActive =
+                  location === item.href ||
+                  (item.href !== "/" && location.startsWith(item.href));
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setSidebarOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all duration-200 relative group",
+                      isActive
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                    )}
+                  >
+                    {isActive && (
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-md"></div>
+                    )}
+                    <item.icon
+                      className={cn(
+                        "w-5 h-5",
+                        isActive
+                          ? "text-primary"
+                          : "text-muted-foreground group-hover:text-foreground",
+                      )}
+                    />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        )}
 
         {/* Page Content */}
         <div className="flex-1 p-4 md:p-8 overflow-y-auto">
