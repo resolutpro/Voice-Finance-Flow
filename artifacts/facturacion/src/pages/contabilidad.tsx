@@ -261,8 +261,7 @@ export default function AccountingPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-3xl font-display font-bold text-foreground flex items-center gap-2">
-            Contabilidad{" "}
-            <span className="text-primary hidden sm:inline">Operativa</span>
+            Contabilidad Operativa
           </h2>
           <p className="text-muted-foreground mt-1">
             Análisis de rentabilidad, desglose de categorías y obligaciones

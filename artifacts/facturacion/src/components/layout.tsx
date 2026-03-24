@@ -31,6 +31,7 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/invoices", label: "Facturación", icon: FileText },
   {
+    
     label: "Gastos recurrentes",
     href: "/compromisos",
     icon: Repeat,
