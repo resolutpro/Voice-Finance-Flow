@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AuthResponse,
   BankAccount,
   BankAccountInput,
   CashForecast,
@@ -42,12 +43,15 @@ import type {
   GetNextInvoiceNumber200,
   GetNextInvoiceNumberParams,
   HealthStatus,
+  Invitation,
+  InvitationInput,
   InvoiceCreateInput,
   InvoiceWithItems,
   ListBankAccountsParams,
   ListCashMovementsParams,
   ListClientsParams,
   ListExpensesParams,
+  ListInvitationsParams,
   ListInvoicesParams,
   ListProjectsParams,
   ListRecurringCommitmentsParams,
@@ -60,6 +64,7 @@ import type {
   ProjectInput,
   RecurringCommitment,
   RecurringCommitmentInput,
+  RegisterInput,
   RegisterInvoicePaymentBody,
   RegisterVendorPaymentBody,
   SeedData200,
@@ -81,6 +86,272 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+/**
+ * @summary Registrar un nuevo usuario usando un token de invitación
+ */
+export const getRegisterUserUrl = () => {
+  return `/api/auth/register`;
+};
+
+export const registerUser = async (
+  registerInput: RegisterInput,
+  options?: RequestInit,
+): Promise<AuthResponse> => {
+  return customFetch<AuthResponse>(getRegisterUserUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(registerInput),
+  });
+};
+
+export const getRegisterUserMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof registerUser>>,
+    TError,
+    { data: BodyType<RegisterInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof registerUser>>,
+  TError,
+  { data: BodyType<RegisterInput> },
+  TContext
+> => {
+  const mutationKey = ["registerUser"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof registerUser>>,
+    { data: BodyType<RegisterInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return registerUser(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RegisterUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof registerUser>>
+>;
+export type RegisterUserMutationBody = BodyType<RegisterInput>;
+export type RegisterUserMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Registrar un nuevo usuario usando un token de invitación
+ */
+export const useRegisterUser = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof registerUser>>,
+    TError,
+    { data: BodyType<RegisterInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof registerUser>>,
+  TError,
+  { data: BodyType<RegisterInput> },
+  TContext
+> => {
+  return useMutation(getRegisterUserMutationOptions(options));
+};
+
+/**
+ * @summary Crear una nueva invitación (Solo Administradores)
+ */
+export const getCreateInvitationUrl = () => {
+  return `/api/invitations`;
+};
+
+export const createInvitation = async (
+  invitationInput: InvitationInput,
+  options?: RequestInit,
+): Promise<Invitation> => {
+  return customFetch<Invitation>(getCreateInvitationUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(invitationInput),
+  });
+};
+
+export const getCreateInvitationMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createInvitation>>,
+    TError,
+    { data: BodyType<InvitationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createInvitation>>,
+  TError,
+  { data: BodyType<InvitationInput> },
+  TContext
+> => {
+  const mutationKey = ["createInvitation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createInvitation>>,
+    { data: BodyType<InvitationInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createInvitation(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateInvitationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createInvitation>>
+>;
+export type CreateInvitationMutationBody = BodyType<InvitationInput>;
+export type CreateInvitationMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Crear una nueva invitación (Solo Administradores)
+ */
+export const useCreateInvitation = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createInvitation>>,
+    TError,
+    { data: BodyType<InvitationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createInvitation>>,
+  TError,
+  { data: BodyType<InvitationInput> },
+  TContext
+> => {
+  return useMutation(getCreateInvitationMutationOptions(options));
+};
+
+/**
+ * @summary Listar todas las invitaciones
+ */
+export const getListInvitationsUrl = (params?: ListInvitationsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/invitations?${stringifiedParams}`
+    : `/api/invitations`;
+};
+
+export const listInvitations = async (
+  params?: ListInvitationsParams,
+  options?: RequestInit,
+): Promise<Invitation[]> => {
+  return customFetch<Invitation[]>(getListInvitationsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListInvitationsQueryKey = (params?: ListInvitationsParams) => {
+  return [`/api/invitations`, ...(params ? [params] : [])] as const;
+};
+
+export const getListInvitationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listInvitations>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListInvitationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvitations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListInvitationsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listInvitations>>> = ({
+    signal,
+  }) => listInvitations(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listInvitations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListInvitationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listInvitations>>
+>;
+export type ListInvitationsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Listar todas las invitaciones
+ */
+
+export function useListInvitations<
+  TData = Awaited<ReturnType<typeof listInvitations>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListInvitationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvitations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListInvitationsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Obtener análisis de deuda y cartera (Aging)

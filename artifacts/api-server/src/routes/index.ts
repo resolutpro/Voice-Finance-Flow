@@ -21,6 +21,7 @@ import seedRouter from "./seed";
 import productsRouter from "./products";
 import recurringCommitmentsRouter from "./recurring-commitments";
 import reportsRouter from "./reports";
+import invitationsRouter from "./invitations";
 
 const router: IRouter = Router();
 
@@ -45,6 +46,7 @@ router.use(receivablesRouter);
 router.use(payablesRouter);
 router.use(seedRouter);
 router.use(recurringCommitmentsRouter);
-router.use("/reports", reportsRouter);
+router.use(reportsRouter);
+router.use(invitationsRouter);
 
 export default router;

@@ -5,6 +5,39 @@
  * Facturación, Tesorería y Previsión de Caja API
  * OpenAPI spec version: 0.1.0
  */
+export interface Invitation {
+  id: number;
+  email: string;
+  token: string;
+  companyId: number;
+  isUsed: boolean;
+  expiresAt: string;
+}
+
+export interface InvitationInput {
+  email: string;
+  companyId: number;
+}
+
+export interface RegisterInput {
+  name: string;
+  email: string;
+  password: string;
+  token: string;
+}
+
+export type AuthResponseUser = {
+  id: number;
+  name: string;
+  email: string;
+  defaultCompanyId: number;
+};
+
+export interface AuthResponse {
+  token: string;
+  user: AuthResponseUser;
+}
+
 export type AlertItemType = (typeof AlertItemType)[keyof typeof AlertItemType];
 
 export const AlertItemType = {
@@ -647,6 +680,10 @@ export interface VoiceParseResult {
   preview?: VoiceParseResultPreview;
   message: string;
 }
+
+export type ListInvitationsParams = {
+  companyId?: number;
+};
 
 export type GetDebtAnalysisParams = {
   /**

@@ -29,7 +29,16 @@ import {
 } from "@/components/ui/dialog";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { useListCompanies } from "@workspace/api-client-react";
-import { Trash2, Building2, Upload, Users, Edit2, Package } from "lucide-react";
+import {
+  Trash2,
+  Building2,
+  Upload,
+  Users,
+  Edit2,
+  Package,
+  Link as LinkIcon,
+  Copy,
+} from "lucide-react";
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -71,6 +80,48 @@ export default function SettingsPage() {
     },
     enabled: !!selectedCompanyId,
   });
+  // Query invitaciones
+  const { data: invitations, isLoading: isLoadingInvitations } = useQuery({
+    queryKey: ["invitations", selectedCompanyId],
+    queryFn: async () => {
+      if (!selectedCompanyId) return [];
+      const res = await fetch(
+        `/api/invitations?companyId=${selectedCompanyId}`,
+      );
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedCompanyId,
+  });
+
+  const [inviteEmail, setInviteEmail] = useState("");
+
+  const createInvitationMutation = useMutation({
+    mutationFn: async (data: { email: string; companyId: number }) => {
+      const res = await fetch("/api/invitations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Error al generar invitación");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "✅ Enlace de invitación generado" });
+      setInviteEmail("");
+      queryClient.invalidateQueries({
+        queryKey: ["invitations", selectedCompanyId],
+      });
+    },
+    onError: () =>
+      toast({ title: "❌ Error al generar", variant: "destructive" }),
+  });
+
+  const copyToClipboard = (token: string) => {
+    const link = `${window.location.origin}/register?token=${token}`;
+    navigator.clipboard.writeText(link);
+    toast({ title: "📋 Enlace copiado al portapapeles" });
+  };
 
   // --- ESTADOS DE FORMULARIO ---
   const [companyFormData, setCompanyFormData] = useState({
@@ -184,7 +235,10 @@ export default function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
     },
     onError: () =>
-      toast({ title: "❌ Error al actualizar empresa", variant: "destructive" }),
+      toast({
+        title: "❌ Error al actualizar empresa",
+        variant: "destructive",
+      }),
   });
 
   // --- MUTACIONES CLIENTES ---
@@ -341,7 +395,7 @@ export default function SettingsPage() {
       try {
         const text = e.target?.result as string;
         const lines = text.split("\n").filter((line) => line.trim());
-        
+
         if (lines.length === 0) {
           throw new Error("El archivo está vacío");
         }
@@ -352,7 +406,9 @@ export default function SettingsPage() {
 
         // Find header line more flexibly
         for (let i = 0; i < Math.min(5, lines.length); i++) {
-          const columns = lines[i].split("\t").map((c) => c.trim().toUpperCase());
+          const columns = lines[i]
+            .split("\t")
+            .map((c) => c.trim().toUpperCase());
           // Look for columns that could be product name and price
           if (
             (columns[0]?.includes("ARTICULO") ||
@@ -380,9 +436,7 @@ export default function SettingsPage() {
         const startLine = headerFound ? headerLineIndex + 1 : 0;
 
         for (let i = startLine; i < lines.length; i++) {
-          const columns = lines[i]
-            .split("\t")
-            .map((c) => c.trim());
+          const columns = lines[i].split("\t").map((c) => c.trim());
 
           if (!columns[0]) continue; // Skip empty lines
 
@@ -412,7 +466,7 @@ export default function SettingsPage() {
 
         if (productsToCreate.length === 0) {
           throw new Error(
-            "No se encontraron productos válidos en el archivo. Verifica que el archivo tenga al menos 2 columnas (Artículo y Precio)."
+            "No se encontraron productos válidos en el archivo. Verifica que el archivo tenga al menos 2 columnas (Artículo y Precio).",
           );
         }
 
@@ -425,9 +479,7 @@ export default function SettingsPage() {
         const responseData = await res.json();
 
         if (!res.ok) {
-          throw new Error(
-            responseData.error || "Error en la subida masiva"
-          );
+          throw new Error(responseData.error || "Error en la subida masiva");
         }
 
         toast({
@@ -464,6 +516,7 @@ export default function SettingsPage() {
           <TabsTrigger value="clientes">Clientes</TabsTrigger>
           <TabsTrigger value="productos">Productos</TabsTrigger>
         </TabsList>
+        <TabsTrigger value="invitaciones">Invitaciones</TabsTrigger>
 
         {/* --- PESTAÑA EMPRESAS --- */}
         <TabsContent value="empresas" className="space-y-4">
@@ -625,7 +678,9 @@ export default function SettingsPage() {
                         className="w-full"
                       >
                         <Upload className="h-4 w-4 mr-2" />
-                        {companyFormData.logo ? "Cambiar Logo" : "Seleccionar Logo"}
+                        {companyFormData.logo
+                          ? "Cambiar Logo"
+                          : "Seleccionar Logo"}
                       </Button>
                       {companyFormData.logo && (
                         <Button
@@ -1134,6 +1189,158 @@ export default function SettingsPage() {
             </Card>
           </div>
         </TabsContent>
+
+        {/* --- PESTAÑA INVITACIONES --- */}
+        <TabsContent value="invitaciones" className="space-y-4">
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <LinkIcon className="h-5 w-5" />
+                  Generar Enlace de Registro
+                </CardTitle>
+                <CardDescription>
+                  Genera un enlace único para que un usuario se registre y se
+                  asocie a una empresa.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-2">
+                  <Label>Empresa Destino</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={selectedCompanyId}
+                    onChange={(e) =>
+                      setSelectedCompanyId(
+                        e.target.value === "" ? "" : Number(e.target.value),
+                      )
+                    }
+                  >
+                    <option value="">-- Seleccionar Empresa --</option>
+                    {companies.map((c: any) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!selectedCompanyId) {
+                      toast({
+                        title: "Selecciona una empresa primero",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    createInvitationMutation.mutate({
+                      email: inviteEmail,
+                      companyId: Number(selectedCompanyId),
+                    });
+                  }}
+                  className="space-y-4 pt-4 border-t"
+                >
+                  <div className="grid gap-2">
+                    <Label>Email del Cliente / Usuario</Label>
+                    <Input
+                      type="email"
+                      placeholder="usuario@ejemplo.com"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      disabled={!selectedCompanyId}
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Solo como referencia. El enlace podrá usarlo quien lo
+                      reciba.
+                    </p>
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={
+                      !selectedCompanyId || createInvitationMutation.isPending
+                    }
+                    className="w-full"
+                  >
+                    Generar Enlace
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Enlaces Activos</CardTitle>
+                <CardDescription>
+                  {selectedCompanyId
+                    ? "Invitaciones de la empresa seleccionada"
+                    : "Selecciona una empresa para ver sus invitaciones"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingInvitations ? (
+                  <p>Cargando invitaciones...</p>
+                ) : invitations?.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No hay invitaciones para esta empresa.
+                  </p>
+                ) : (
+                  <div className="rounded-md border max-h-[400px] overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Estado</TableHead>
+                          <TableHead className="text-right">Acción</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {invitations?.map((inv: any) => {
+                          const isExpired =
+                            new Date(inv.expiresAt) < new Date();
+                          return (
+                            <TableRow key={inv.id}>
+                              <TableCell className="font-medium text-xs">
+                                {inv.email}
+                              </TableCell>
+                              <TableCell>
+                                {inv.isUsed ? (
+                                  <span className="text-green-600 text-xs font-bold">
+                                    Usado
+                                  </span>
+                                ) : isExpired ? (
+                                  <span className="text-red-500 text-xs">
+                                    Caducado
+                                  </span>
+                                ) : (
+                                  <span className="text-blue-500 text-xs">
+                                    Pendiente
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => copyToClipboard(inv.token)}
+                                  disabled={inv.isUsed || isExpired}
+                                >
+                                  <Copy className="h-4 w-4 mr-1" /> Copiar
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
       </Tabs>
 
       {/* --- DIALOG EDITAR EMPRESA --- */}
@@ -1347,10 +1554,7 @@ export default function SettingsPage() {
               >
                 Cancelar
               </Button>
-              <Button
-                type="submit"
-                disabled={updateCompanyMutation.isPending}
-              >
+              <Button type="submit" disabled={updateCompanyMutation.isPending}>
                 {updateCompanyMutation.isPending
                   ? "Guardando..."
                   : "Guardar Cambios"}

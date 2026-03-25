@@ -8,6 +8,51 @@
 import * as zod from "zod";
 
 /**
+ * @summary Registrar un nuevo usuario usando un token de invitación
+ */
+export const RegisterUserBody = zod.object({
+  name: zod.string(),
+  email: zod.string(),
+  password: zod.string(),
+  token: zod.string(),
+});
+
+export const RegisterUserResponse = zod.object({
+  token: zod.string(),
+  user: zod.object({
+    id: zod.number(),
+    name: zod.string(),
+    email: zod.string(),
+    defaultCompanyId: zod.number(),
+  }),
+});
+
+/**
+ * @summary Crear una nueva invitación (Solo Administradores)
+ */
+export const CreateInvitationBody = zod.object({
+  email: zod.string(),
+  companyId: zod.number(),
+});
+
+/**
+ * @summary Listar todas las invitaciones
+ */
+export const ListInvitationsQueryParams = zod.object({
+  companyId: zod.coerce.number().optional(),
+});
+
+export const ListInvitationsResponseItem = zod.object({
+  id: zod.number(),
+  email: zod.string(),
+  token: zod.string(),
+  companyId: zod.number(),
+  isUsed: zod.boolean(),
+  expiresAt: zod.string(),
+});
+export const ListInvitationsResponse = zod.array(ListInvitationsResponseItem);
+
+/**
  * @summary Obtener análisis de deuda y cartera (Aging)
  */
 export const GetDebtAnalysisQueryParams = zod.object({

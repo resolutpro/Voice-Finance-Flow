@@ -39,8 +39,73 @@ tags:
     description: Task management
   - name: voice
     description: Voice command processing
+  - name: auth
+    description: Autenticación y Registro de usuarios
+  - name: invitations
+    description: Gestión de invitaciones al sistema
 
 paths:
+
+  /auth/register:
+    post:
+      summary: Registrar un nuevo usuario usando un token de invitación
+      operationId: registerUser
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterInput'
+      responses:
+        '200':
+          description: Registro completado con éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /invitations:
+    post:
+      summary: Crear una nueva invitación (Solo Administradores)
+      operationId: createInvitation
+      tags:
+        - invitations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationInput'
+      responses:
+        '201':
+          description: Invitación creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+    get:
+      summary: Listar todas las invitaciones
+      operationId: listInvitations
+      tags:
+        - invitations
+      parameters:
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de invitaciones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invitation'
+                  
   /dashboard/debt-analysis:
     get:
       summary: Obtener análisis de deuda y cartera (Aging)
@@ -1059,6 +1124,64 @@ paths:
 
 components:
   schemas:
+    Invitation:
+      type: object
+      required: [id, email, token, companyId, isUsed, expiresAt]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        token:
+          type: string
+        companyId:
+          type: integer
+        isUsed:
+          type: boolean
+        expiresAt:
+          type: string
+
+    InvitationInput:
+      type: object
+      required: [email, companyId]
+      properties:
+        email:
+          type: string
+        companyId:
+          type: integer
+
+    RegisterInput:
+      type: object
+      required: [name, email, password, token]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        token:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+        user:
+          type: object
+          required: [id, name, email, defaultCompanyId]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            email:
+              type: string
+            defaultCompanyId:
+              type: integer
+      
     AlertItem:
       type: object
       required: [id, type, document, entity, amount, dueDate, daysOverdue]
