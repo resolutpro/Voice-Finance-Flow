@@ -515,8 +515,8 @@ export default function SettingsPage() {
           <TabsTrigger value="empresas">Empresas</TabsTrigger>
           <TabsTrigger value="clientes">Clientes</TabsTrigger>
           <TabsTrigger value="productos">Productos</TabsTrigger>
+          <TabsTrigger value="invitaciones">Invitaciones</TabsTrigger>
         </TabsList>
-        <TabsTrigger value="invitaciones">Invitaciones</TabsTrigger>
 
         {/* --- PESTAÑA EMPRESAS --- */}
         <TabsContent value="empresas" className="space-y-4">

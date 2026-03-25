@@ -9,32 +9,59 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Link, useSearch } from "wouter"; // Usamos useSearch para leer la URL
+import { useState } from "react";
 
 export default function RegisterPage() {
   const { login } = useAuth();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   // Leer el parámetro ?token= de la URL
   const searchString = useSearch();
   const params = new URLSearchParams(searchString);
   const inviteToken = params.get("token");
 
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError("");
+    setLoading(true);
 
-    // Aquí enviarás el token al backend junto con los datos
-    /*
-    const response = await fetch('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: e.target.name.value,
-        email: e.target.email.value,
-        password: e.target.password.value,
-        token: inviteToken // ¡Crucial!
-      })
-    });
-    */
+    const formData = new FormData(e.currentTarget);
+    const name = formData.get("name") as string;
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
 
-    login("token-temporal-de-prueba");
+    try {
+      const response = await fetch(
+        `${import.meta.env.BASE_URL}api/auth/register`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name,
+            email,
+            password,
+            token: inviteToken,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        setError(errorData.error || "Error al registrarse");
+        return;
+      }
+
+      const data = await response.json();
+      login(data.token);
+    } catch (err) {
+      setError("Error de conexión con el servidor");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Si alguien entra a /register sin un token válido, le bloqueamos la vista
@@ -66,12 +93,23 @@ export default function RegisterPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleRegister} className="grid gap-4">
-            {/* ... inputs de nombre, email y contraseña idénticos a los tuyos ... */}
+            {error && (
+              <div className="bg-destructive/10 border border-destructive text-destructive text-sm p-3 rounded">
+                {error}
+              </div>
+            )}
             <div className="grid gap-2">
               <label htmlFor="name" className="text-sm font-medium">
                 Nombre completo
               </label>
-              <Input id="name" type="text" placeholder="Juan Pérez" required />
+              <Input
+                id="name"
+                name="name"
+                type="text"
+                placeholder="Juan Pérez"
+                required
+                disabled={loading}
+              />
             </div>
             <div className="grid gap-2">
               <label htmlFor="email" className="text-sm font-medium">
@@ -79,20 +117,28 @@ export default function RegisterPage() {
               </label>
               <Input
                 id="email"
+                name="email"
                 type="email"
                 placeholder="hola@empresa.com"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
               <label htmlFor="password" className="text-sm font-medium">
                 Contraseña
               </label>
-              <Input id="password" type="password" required />
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                required
+                disabled={loading}
+              />
             </div>
 
-            <Button type="submit" className="w-full mt-2">
-              Registrarse
+            <Button type="submit" className="w-full mt-2" disabled={loading}>
+              {loading ? "Registrando..." : "Registrarse"}
             </Button>
           </form>
         </CardContent>
