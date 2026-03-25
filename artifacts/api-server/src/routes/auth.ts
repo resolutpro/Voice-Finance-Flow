@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcryptjs";
 import {
   db,
   usersTable,
@@ -23,7 +24,12 @@ router.post("/auth/login", async (req, res) => {
       .from(usersTable)
       .where(eq(usersTable.email, email));
 
-    if (!user || user.passwordHash !== password) {
+    if (!user) {
+      return res.status(401).json({ error: "Email o contraseña incorrectos" });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
       return res.status(401).json({ error: "Email o contraseña incorrectos" });
     }
 
@@ -56,13 +62,16 @@ console.log("🔐 Token Maestro en el .env:", process.env.MASTER_TOKEN);
         })
         .returning();
 
+      // Hash the password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
       // Creamos tu usuario administrador asociado a esa empresa
       const [adminUser] = await db
         .insert(usersTable)
         .values({
           name,
           email,
-          passwordHash: password, // Nota: En el futuro deberíamos encriptar esto con bcrypt
+          passwordHash: hashedPassword,
           defaultCompanyId: adminCompany.id,
           role: "admin",
         })
@@ -92,13 +101,16 @@ console.log("🔐 Token Maestro en el .env:", process.env.MASTER_TOKEN);
       return res.status(400).json({ error: "Esta invitación ha caducado." });
     }
 
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     // Crear el usuario normal
     const [newUser] = await db
       .insert(usersTable)
       .values({
         name,
         email,
-        passwordHash: password,
+        passwordHash: hashedPassword,
         defaultCompanyId: invitation.companyId,
         role: "user",
       })
