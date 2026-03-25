@@ -23,44 +23,35 @@ export default function RegisterPage() {
 
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError("");
-    setLoading(true);
 
-    const formData = new FormData(e.currentTarget);
-    const name = formData.get("name") as string;
-    const email = formData.get("email") as string;
-    const password = formData.get("password") as string;
+    // Obtenemos los valores de los inputs por su ID
+    const name = (
+      e.currentTarget.elements.namedItem("name") as HTMLInputElement
+    ).value;
+    const email = (
+      e.currentTarget.elements.namedItem("email") as HTMLInputElement
+    ).value;
+    const password = (
+      e.currentTarget.elements.namedItem("password") as HTMLInputElement
+    ).value;
 
     try {
-      const response = await fetch(
-        `${import.meta.env.BASE_URL}api/auth/register`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name,
-            email,
-            password,
-            token: inviteToken,
-          }),
-        }
-      );
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, token: inviteToken }),
+      });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        setError(errorData.error || "Error al registrarse");
-        return;
+      if (res.ok) {
+        // Obtenemos el token JWT real más adelante, de momento simulamos login
+        login("token-temporal-jwt");
+      } else {
+        const errorData = await res.json();
+        alert(`Error: ${errorData.error}`);
       }
-
-      const data = await response.json();
-      login(data.token);
     } catch (err) {
-      setError("Error de conexión con el servidor");
       console.error(err);
-    } finally {
-      setLoading(false);
+      alert("Error de conexión al registrar.");
     }
   };
 

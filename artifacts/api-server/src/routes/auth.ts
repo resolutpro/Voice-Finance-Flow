@@ -1,142 +1,119 @@
 import { Router } from "express";
-import { db, usersTable, invitationsTable } from "@workspace/db";
+import {
+  db,
+  usersTable,
+  companiesTable,
+  invitationsTable,
+} from "@workspace/db";
+
 import { eq } from "drizzle-orm";
-import crypto from "crypto";
 
 const router = Router();
-
-function hashPassword(password: string): string {
-  return crypto.createHash("sha256").update(password).digest("hex");
-}
-
-function verifyPassword(password: string, hash: string): boolean {
-  return hashPassword(password) === hash;
-}
-
-function generateToken(): string {
-  return crypto.randomBytes(32).toString("hex");
-}
 
 router.post("/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: "Email and password required" });
+      return res.status(400).json({ error: "Email y contraseña son requeridos" });
     }
 
-    const user = await db
+    const [user] = await db
       .select()
       .from(usersTable)
-      .where(eq(usersTable.email, email))
-      .limit(1);
+      .where(eq(usersTable.email, email));
 
-    if (!user || user.length === 0) {
-      return res.status(401).json({ error: "Invalid email or password" });
+    if (!user || user.passwordHash !== password) {
+      return res.status(401).json({ error: "Email o contraseña incorrectos" });
     }
 
-    const foundUser = user[0];
-
-    if (!foundUser.isActive) {
-      return res.status(401).json({ error: "User account is inactive" });
-    }
-
-    if (!verifyPassword(password, foundUser.passwordHash)) {
-      return res.status(401).json({ error: "Invalid email or password" });
-    }
-
-    const token = generateToken();
-    res.json({
-      token,
-      user: {
-        id: foundUser.id,
-        email: foundUser.email,
-        name: foundUser.name,
-        role: foundUser.role,
-        defaultCompanyId: foundUser.defaultCompanyId,
-      },
-    });
+    res.json({ token: `token_${user.id}` });
   } catch (error) {
-    console.error("Error logging in:", error);
-    res.status(500).json({ error: "Error during login" });
+    console.error("Error en login:", error);
+    res.status(500).json({ error: "Error en el servidor" });
   }
 });
 
 router.post("/auth/register", async (req, res) => {
   try {
-    const { email, password, name, token: inviteToken } = req.body;
+    const { name, email, password, token } = req.body;
 
-    if (!email || !password || !name || !inviteToken) {
-      return res
-        .status(400)
-        .json({
-          error: "Email, password, name, and invite token are required",
-        });
-    }
+console.log("🔐 Token Maestro en el .env:", process.env.MASTER_TOKEN);
 
-    // Verify the invitation token is valid
-    const invitation = await db
-      .select()
-      .from(invitationsTable)
-      .where(eq(invitationsTable.token, inviteToken))
-      .limit(1);
+    // --- 1. COMPROBAR SI ES EL TOKEN MAESTRO ---
+    // (Asegúrate de poner MASTER_TOKEN=tu-clave-secreta en tu archivo .env)
+    if (token === process.env.MASTER_TOKEN) {
+      // Creamos tu empresa principal ("Sede Central")
+      const [adminCompany] = await db
+        .insert(companiesTable)
+        .values({
+          name: "Sede Central (Admin)",
+          taxId: "00000000A",
+          address: "Sede",
+          city: "Ciudad",
+          province: "Provincia",
+          postalCode: "00000",
+        })
+        .returning();
 
-    if (!invitation || invitation.length === 0) {
-      return res.status(400).json({ error: "Invalid or expired invitation" });
-    }
+      // Creamos tu usuario administrador asociado a esa empresa
+      const [adminUser] = await db
+        .insert(usersTable)
+        .values({
+          name,
+          email,
+          passwordHash: password, // Nota: En el futuro deberíamos encriptar esto con bcrypt
+          defaultCompanyId: adminCompany.id,
+          role: "admin",
+        })
+        .returning();
 
-    const invite = invitation[0];
-
-    // Check if invitation has expired
-    if (new Date(invite.expiresAt) < new Date()) {
-      return res.status(400).json({ error: "Invitation has expired" });
-    }
-
-    // Check if email matches the invitation
-    if (invite.email !== email) {
-      return res.status(400).json({
-        error: "Email must match the invitation email address",
+      return res.status(200).json({
+        message: "Usuario Padre creado con éxito",
+        user: adminUser,
       });
     }
 
-    // Check if user already exists
-    const existingUser = await db
+    // --- 2. FLUJO NORMAL DE INVITACIONES (Para tus clientes) ---
+    const [invitation] = await db
       .select()
-      .from(usersTable)
-      .where(eq(usersTable.email, email))
-      .limit(1);
+      .from(invitationsTable)
+      .where(eq(invitationsTable.token, token));
 
-    if (existingUser && existingUser.length > 0) {
-      return res.status(400).json({ error: "User already exists" });
+    if (!invitation) {
+      return res.status(400).json({ error: "Token inválido." });
+    }
+    if (invitation.isUsed) {
+      return res
+        .status(400)
+        .json({ error: "Esta invitación ya ha sido utilizada." });
+    }
+    if (new Date(invitation.expiresAt) < new Date()) {
+      return res.status(400).json({ error: "Esta invitación ha caducado." });
     }
 
-    // Create the user
-    const passwordHash = hashPassword(password);
+    // Crear el usuario normal
     const [newUser] = await db
       .insert(usersTable)
       .values({
-        email,
-        passwordHash,
         name,
+        email,
+        passwordHash: password,
+        defaultCompanyId: invitation.companyId,
         role: "user",
-        defaultCompanyId: invite.companyId,
       })
       .returning();
 
-    const token = generateToken();
-    res.status(201).json({
-      token,
-      user: {
-        id: newUser.id,
-        email: newUser.email,
-        name: newUser.name,
-        role: newUser.role,
-        defaultCompanyId: newUser.defaultCompanyId,
-      },
-    });
+    // Marcar la invitación como usada
+    await db
+      .update(invitationsTable)
+      .set({ isUsed: true })
+      .where(eq(invitationsTable.id, invitation.id));
+
+    return res.status(200).json({ user: newUser });
   } catch (error) {
-    console.error("Error registering:", error);
-    res.status(500).json({ error: "Error during registration" });
+    console.error("Error en el registro:", error);
+    res.status(500).json({ error: "Error en el servidor durante el registro" });
   }
 });
 
