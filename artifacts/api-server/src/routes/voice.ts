@@ -38,7 +38,7 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
 
     const clientNamesStr = companyClients.map((c) => c.name).join(", ");
 
-    // 2. Mejorar el Prompt para que diferencie facturas/presupuestos y conozca a tus clientes
+    // 2. Prompt mejorado para extraer array de ítems en facturas/presupuestos
     const systemPrompt = `
       Eres el asistente de voz de una aplicación de facturación.
       Hoy es ${new Date().toISOString().split("T")[0]}.
@@ -46,8 +46,10 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
 
       Clientes registrados en esta empresa: [${clientNamesStr || "Ninguno"}].
       Si el usuario menciona a un cliente, intenta emparejarlo usando EXACTAMENTE el nombre de esta lista si suena similar.
+      ¡IMPORTANTE!: Si el usuario menciona un cliente que NO está en la lista, extrae su nombre tal cual lo ha pronunciado. NO lo omitas ni lo dejes en null.
 
       Identifica si el usuario quiere crear una FACTURA ("invoice") o un PRESUPUESTO ("quote"). Si no lo especifica, asume "invoice".
+      IMPORTANTE: Si el usuario menciona Varios conceptos, productos o servicios, extráelos TODOS en el array "items". Si no especifica una cantidad para un ítem, asume 1.
 
       Responde ÚNICAMENTE con JSON válido:
       {
@@ -60,7 +62,14 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
           "hasIva": boolean | null,
           "date": string | null,
           "dueDate": string | null,
-          "invoiceNumber": string | null
+          "invoiceNumber": string | null,
+          "items": [
+            {
+              "concept": "string",
+              "amount": number,
+              "quantity": number
+            }
+          ]
         }
       }
     `;
@@ -89,14 +98,43 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
         date,
         dueDate,
         documentType,
+        items,
       } = entities;
-      const numAmount = amount || 0;
-      const finalConcept = concept || "Servicios generales";
+
       const docType = documentType === "quote" ? "quote" : "invoice";
+
+      // 3. Procesar el array de líneas (items) dinámicamente
+      let invoiceItems = [];
+      let totalAmount = 0;
+
+      if (Array.isArray(items) && items.length > 0) {
+        invoiceItems = items.map((i: any) => {
+          const q = i.quantity || 1;
+          const p = i.amount || 0;
+          totalAmount += q * p; // Vamos sumando el importe total
+          return {
+            description: i.concept || "Servicios",
+            quantity: q.toString(),
+            unitPrice: p.toString(),
+          };
+        });
+      } else {
+        // Fallback en caso de que la IA detecte solo 1 ítem a la manera antigua
+        const numAmount = amount || 0;
+        totalAmount = numAmount;
+        invoiceItems = [
+          {
+            description: concept || "Servicios generales",
+            quantity: "1",
+            unitPrice: numAmount.toString(),
+          },
+        ];
+      }
 
       let clientId: number | null = null;
       let finalClientName = clientName || "";
 
+      // Buscamos o creamos el cliente
       // Buscamos o creamos el cliente
       if (finalClientName) {
         const client = await findClientByName(finalClientName, activeCompanyId);
@@ -104,16 +142,17 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
           clientId = client.id;
           finalClientName = client.name;
         } else {
+          // Cliente nuevo: lo creamos guardando solo el nombre y dejando lo demás vacío
           const [newClient] = await db
             .insert(clientsTable)
             .values({
               companyId: activeCompanyId,
               name: finalClientName,
-              taxId: "PENDIENTE",
-              address: "Pendiente",
-              city: "Pendiente",
-              province: "Pendiente",
-              postalCode: "00000",
+              taxId: "", // Vacío para que lo edite después
+              address: "",
+              city: "",
+              province: "",
+              postalCode: "",
             })
             .returning();
           clientId = newClient.id;
@@ -121,28 +160,25 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
       }
 
       res.json({
-        intent: "create_invoice", // Mantenemos esta clave para que el frontend abra el modal correcto
+        intent: "create_invoice",
         confidence: 0.95,
         entities: {
           clientId,
           clientName: finalClientName,
-          amount: numAmount,
+          amount: totalAmount, // Ahora envía el sumatorio total correcto
           hasIva,
-          concept: finalConcept,
+          concept:
+            invoiceItems.length > 1
+              ? "Varios conceptos"
+              : invoiceItems[0].description,
         },
         preview: {
-          type: docType, // Aquí viaja "invoice" o "quote"
+          type: docType,
           clientId,
           clientName: finalClientName,
           companyId: activeCompanyId,
-          items: [
-            {
-              description: finalConcept,
-              quantity: "1",
-              unitPrice: numAmount.toString(),
-            },
-          ],
-          taxRate: hasIva !== false ? "21" : "0", // Si dice explícitamente sin IVA es 0, si no 21
+          items: invoiceItems, // Inyectamos todas las líneas procesadas
+          taxRate: hasIva !== false ? "21" : "0",
           issueDate: date || new Date().toISOString().split("T")[0],
           dueDate: dueDate || null,
         },
