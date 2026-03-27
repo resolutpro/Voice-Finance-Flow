@@ -289,6 +289,44 @@ export default function SettingsPage() {
     },
   });
 
+  const updateClientMutation = useMutation({
+    mutationFn: async (data: {
+      id: number;
+      formData: typeof clientFormData;
+    }) => {
+      const res = await fetch(`/api/clients/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data.formData),
+      });
+      if (!res.ok) throw new Error("Error al actualizar");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "✅ Cliente actualizado" });
+      setIsEditClientDialogOpen(false);
+      setEditingClient(null);
+      setClientFormData({
+        name: "",
+        taxId: "",
+        address: "",
+        city: "",
+        province: "",
+        postalCode: "",
+        phone: "",
+        fax: "",
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["clients", selectedCompanyId],
+      });
+    },
+    onError: () =>
+      toast({
+        title: "❌ Error al actualizar cliente",
+        variant: "destructive",
+      }),
+  });
+
   // --- MUTACIONES PRODUCTOS ---
   const deleteProductMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -1041,7 +1079,29 @@ export default function SettingsPage() {
                               {client.name}
                             </TableCell>
                             <TableCell>{client.taxId}</TableCell>
-                            <TableCell>
+                            <TableCell className="flex gap-2 justify-end">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-blue-500 hover:text-blue-700"
+                                onClick={() => {
+                                  setEditingClient(client);
+                                  setClientFormData({
+                                    name: client.name || "",
+                                    taxId: client.taxId || "",
+                                    address: client.address || "",
+                                    city: client.city || "",
+                                    province: client.province || "",
+                                    postalCode: client.postalCode || "",
+                                    phone: client.phone || "",
+                                    fax: client.fax || "",
+                                  });
+                                  setIsEditClientDialogOpen(true);
+                                }}
+                                title="Editar"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1050,6 +1110,7 @@ export default function SettingsPage() {
                                   deleteClientMutation.mutate(client.id)
                                 }
                                 disabled={deleteClientMutation.isPending}
+                                title="Borrar"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1403,6 +1464,149 @@ export default function SettingsPage() {
               </Button>
               <Button type="submit" disabled={updateCompanyMutation.isPending}>
                 {updateCompanyMutation.isPending
+                  ? "Guardando..."
+                  : "Guardar Cambios"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- DIALOG EDITAR CLIENTE --- */}
+      <Dialog
+        open={isEditClientDialogOpen}
+        onOpenChange={setIsEditClientDialogOpen}
+      >
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Cliente</DialogTitle>
+            <DialogDescription>
+              Modifica los datos del cliente seleccionado.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (editingClient) {
+                updateClientMutation.mutate({
+                  id: editingClient.id,
+                  formData: clientFormData,
+                });
+              }
+            }}
+            className="space-y-4"
+          >
+            <div className="grid gap-2">
+              <Label>Nombre del Cliente (EMPRESA)</Label>
+              <Input
+                value={clientFormData.name}
+                onChange={(e) =>
+                  setClientFormData({
+                    ...clientFormData,
+                    name: e.target.value,
+                  })
+                }
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>CIF/NIF</Label>
+              <Input
+                value={clientFormData.taxId}
+                onChange={(e) =>
+                  setClientFormData({
+                    ...clientFormData,
+                    taxId: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Domicilio</Label>
+              <Input
+                value={clientFormData.address}
+                onChange={(e) =>
+                  setClientFormData({
+                    ...clientFormData,
+                    address: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Localidad</Label>
+                <Input
+                  value={clientFormData.city}
+                  onChange={(e) =>
+                    setClientFormData({
+                      ...clientFormData,
+                      city: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Provincia</Label>
+                <Input
+                  value={clientFormData.province}
+                  onChange={(e) =>
+                    setClientFormData({
+                      ...clientFormData,
+                      province: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Código Postal (C.P.)</Label>
+                <Input
+                  value={clientFormData.postalCode}
+                  onChange={(e) =>
+                    setClientFormData({
+                      ...clientFormData,
+                      postalCode: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Teléfono</Label>
+                <Input
+                  value={clientFormData.phone}
+                  onChange={(e) =>
+                    setClientFormData({
+                      ...clientFormData,
+                      phone: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Fax</Label>
+              <Input
+                value={clientFormData.fax}
+                onChange={(e) =>
+                  setClientFormData({
+                    ...clientFormData,
+                    fax: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditClientDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={updateClientMutation.isPending}>
+                {updateClientMutation.isPending
                   ? "Guardando..."
                   : "Guardar Cambios"}
               </Button>
