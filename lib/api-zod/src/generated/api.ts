@@ -8,6 +8,61 @@
 import * as zod from "zod";
 
 /**
+ * @summary Obtener la lista de usuarios autorizados
+ */
+export const GetAuthorizedUsersResponseItem = zod.object({
+  id: zod.number(),
+  email: zod.string().email(),
+  name: zod.string(),
+  companyAccess: zod.array(
+    zod.object({
+      companyId: zod.number(),
+      modules: zod.array(zod.string()),
+    }),
+  ),
+});
+export const GetAuthorizedUsersResponse = zod.array(
+  GetAuthorizedUsersResponseItem,
+);
+
+/**
+ * @summary Crear o invitar un usuario autorizado
+ */
+export const PostAuthorizedUsersBody = zod.object({
+  email: zod.string().email(),
+  name: zod.string(),
+  companyAccess: zod.array(
+    zod.object({
+      companyId: zod.number(),
+      modules: zod.array(zod.string()),
+    }),
+  ),
+});
+
+/**
+ * @summary Actualizar permisos de un usuario
+ */
+export const PutAuthorizedUsersUserIdParams = zod.object({
+  userId: zod.coerce.number(),
+});
+
+export const PutAuthorizedUsersUserIdBody = zod.object({
+  companyAccess: zod.array(
+    zod.object({
+      companyId: zod.number(),
+      modules: zod.array(zod.string()),
+    }),
+  ),
+});
+
+/**
+ * @summary Revocar acceso de un usuario
+ */
+export const DeleteAuthorizedUsersUserIdParams = zod.object({
+  userId: zod.coerce.string().uuid(),
+});
+
+/**
  * @summary Registrar un nuevo usuario usando un token de invitación
  */
 export const RegisterUserBody = zod.object({

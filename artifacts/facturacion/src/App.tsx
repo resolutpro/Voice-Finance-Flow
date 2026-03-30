@@ -1,10 +1,10 @@
-// artifacts/facturacion/src/App.tsx
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-import { CompanyProvider } from "@/hooks/use-company";
+// AÑADIMOS useCompany AQUÍ
+import { CompanyProvider, useCompany } from "@/hooks/use-company";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/layout";
 
@@ -28,6 +28,41 @@ import AccountingPage from "@/pages/contabilidad";
 
 const queryClient = new QueryClient();
 
+// COMPONENTE NUEVO: Guardián de Módulos
+// COMPONENTE NUEVO: Guardián de Módulos
+function ModuleGuard({
+  children,
+  requiredModule,
+}: {
+  children: React.ReactNode;
+  requiredModule: string;
+}) {
+  const { user } = useAuth();
+  const { activeCompanyId } = useCompany();
+
+  // CORRECCIÓN 2: Validamos si el rol es "admin"
+  if (user?.role === "admin" || requiredModule === "dashboard") {
+    return <>{children}</>;
+  }
+
+  let hasAccess = false;
+
+  if (activeCompanyId && user?.companyAccess) {
+    const access = user.companyAccess.find(
+      (acc: any) => String(acc.companyId) === String(activeCompanyId),
+    );
+    if (access && access.modules.includes(requiredModule)) {
+      hasAccess = true;
+    }
+  }
+
+  if (!hasAccess) {
+    return <Redirect to="/" />;
+  }
+
+  return <>{children}</>;
+}
+
 // Este componente envuelve de forma segura toda el área privada
 function PrivateApp() {
   const { isAuthenticated } = useAuth();
@@ -40,17 +75,61 @@ function PrivateApp() {
     <CompanyProvider>
       <Layout>
         <Switch>
-          <Route path="/" component={Dashboard} />
-          <Route path="/invoices" component={InvoicesPage} />
-          <Route path="/purchases" component={PurchasesPage} />
-          <Route path="/treasury" component={TreasuryPage} />
-          <Route path="/forecast" component={ForecastPage} />
-          <Route path="/tasks" component={TasksPage} />
-          <Route path="/settings" component={SettingsPage} />
-          <Route path="/compromisos" component={RecurringCommitments} />
-          <Route path="/debt-control" component={DebtControlPage} />
-          <Route path="/informes" component={ReportsPage} />
-          <Route path="/contabilidad" component={AccountingPage} />
+          <Route path="/">
+            <ModuleGuard requiredModule="dashboard">
+              <Dashboard />
+            </ModuleGuard>
+          </Route>
+          <Route path="/invoices">
+            <ModuleGuard requiredModule="invoices">
+              <InvoicesPage />
+            </ModuleGuard>
+          </Route>
+          <Route path="/purchases">
+            <ModuleGuard requiredModule="purchases">
+              <PurchasesPage />
+            </ModuleGuard>
+          </Route>
+          <Route path="/treasury">
+            <ModuleGuard requiredModule="treasury">
+              <TreasuryPage />
+            </ModuleGuard>
+          </Route>
+          <Route path="/forecast">
+            <ModuleGuard requiredModule="forecast">
+              <ForecastPage />
+            </ModuleGuard>
+          </Route>
+          <Route path="/tasks">
+            <ModuleGuard requiredModule="tasks">
+              <TasksPage />
+            </ModuleGuard>
+          </Route>
+          <Route path="/settings">
+            <ModuleGuard requiredModule="settings">
+              <SettingsPage />
+            </ModuleGuard>
+          </Route>
+          <Route path="/compromisos">
+            <ModuleGuard requiredModule="compromisos">
+              <RecurringCommitments />
+            </ModuleGuard>
+          </Route>
+          <Route path="/debt-control">
+            <ModuleGuard requiredModule="debt_control">
+              <DebtControlPage />
+            </ModuleGuard>
+          </Route>
+          <Route path="/informes">
+            <ModuleGuard requiredModule="reports">
+              <ReportsPage />
+            </ModuleGuard>
+          </Route>
+          <Route path="/contabilidad">
+            <ModuleGuard requiredModule="accounting">
+              <AccountingPage />
+            </ModuleGuard>
+          </Route>
           <Route component={NotFound} />
         </Switch>
       </Layout>

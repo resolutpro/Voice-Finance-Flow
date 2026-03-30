@@ -5,6 +5,28 @@
  * Facturación, Tesorería y Previsión de Caja API
  * OpenAPI spec version: 0.1.0
  */
+export interface CompanyAccess {
+  companyId: number;
+  modules: string[];
+}
+
+export interface AuthorizedUser {
+  id: number;
+  email: string;
+  name: string;
+  companyAccess: CompanyAccess[];
+}
+
+export interface CreateAuthorizedUserBody {
+  email: string;
+  name: string;
+  companyAccess: CompanyAccess[];
+}
+
+export interface UpdateAuthorizedUserBody {
+  companyAccess: CompanyAccess[];
+}
+
 export interface Invitation {
   id: number;
   email: string;

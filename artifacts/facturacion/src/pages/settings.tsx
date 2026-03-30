@@ -39,6 +39,7 @@ import {
   Link as LinkIcon,
   Copy,
 } from "lucide-react";
+import { AuthorizedUsersPanel } from "@/components/authorized-users-panel";
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -553,6 +554,7 @@ export default function SettingsPage() {
           <TabsTrigger value="empresas">Empresas</TabsTrigger>
           <TabsTrigger value="clientes">Clientes</TabsTrigger>
           <TabsTrigger value="productos">Productos</TabsTrigger>
+          <TabsTrigger value="users">Usuarios Autorizados</TabsTrigger>
         </TabsList>
 
         {/* --- PESTAÑA EMPRESAS --- */}
@@ -1250,6 +1252,10 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
       </Tabs>
+      {/* ---PESTAÑA USUARIOS AUTORIZADOS--- */}
+      <TabsContent value="users">
+        <AuthorizedUsersPanel />
+      </TabsContent>
 
       {/* --- DIALOG EDITAR EMPRESA --- */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

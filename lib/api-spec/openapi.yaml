@@ -45,6 +45,72 @@ tags:
     description: Gestión de invitaciones al sistema
 
 paths:
+  /authorized-users:
+    get:
+      summary: Obtener la lista de usuarios autorizados
+      tags:
+        - Authorized Users
+      responses:
+        '200':
+          description: Lista de usuarios y sus accesos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuthorizedUser'
+    post:
+      summary: Crear o invitar un usuario autorizado
+      tags:
+        - Authorized Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAuthorizedUserBody'
+      responses:
+        '201':
+          description: Usuario autorizado correctamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizedUser'
+
+  /authorized-users/{userId}:
+    put:
+      summary: Actualizar permisos de un usuario
+      tags:
+        - Authorized Users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAuthorizedUserBody'
+      responses:
+        '200':
+          description: Permisos actualizados con éxito
+    delete:
+      summary: Revocar acceso de un usuario
+      tags:
+        - Authorized Users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Acceso revocado completamente
 
   /auth/register:
     post:
@@ -1124,6 +1190,66 @@ paths:
 
 components:
   schemas:
+    CompanyAccess:
+      type: object
+      required:
+        - companyId
+        - modules
+      properties:
+        companyId:
+          type: integer
+        modules:
+          type: array
+          items:
+            type: string
+
+    AuthorizedUser:
+      type: object
+      required:
+        - id
+        - email
+        - name
+        - companyAccess
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        companyAccess:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompanyAccess'
+
+    CreateAuthorizedUserBody:
+      type: object
+      required:
+        - email
+        - name
+        - companyAccess
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        companyAccess:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompanyAccess'
+
+    UpdateAuthorizedUserBody:
+      type: object
+      required:
+        - companyAccess
+      properties:
+        companyAccess:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompanyAccess'
+    
     Invitation:
       type: object
       required: [id, email, token, companyId, isUsed, expiresAt]

@@ -23,6 +23,7 @@ import recurringCommitmentsRouter from "./recurring-commitments";
 import reportsRouter from "./reports";
 import invitationsRouter from "./invitations";
 import authRouter from "./auth";
+import authorizedUsersRouter from "./authorized-users";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use(recurringCommitmentsRouter);
 router.use(reportsRouter);
 router.use(invitationsRouter);
 router.use(authRouter);
+router.use(authorizedUsersRouter);
 
 export default router;

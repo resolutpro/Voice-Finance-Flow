@@ -15,3 +15,4 @@ export * from "./payables";
 export * from "./products";
 export * from "./recurring-commitments";
 export * from "./invitations";
+export * from "./user_company_access";

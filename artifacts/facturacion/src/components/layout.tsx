@@ -1,4 +1,3 @@
-// artifacts/facturacion/src/components/layout.tsx
 import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
@@ -20,41 +19,76 @@ import { useCompany } from "@/hooks/use-company";
 import { useListCompanies, useSeedData } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { VoiceAssistant } from "./voice-assistant";
-// Importamos el nuevo componente de Menú de Usuario
 import { Select, Avatar, AvatarFallback } from "./shared-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-// IMPORTAR EL NUEVO COMPONENTE
 import { UserAvatarMenu } from "./user-avatar-menu";
+import { useAuth } from "@/hooks/use-auth";
 
+// Añadimos moduleId a todos los items para la lógica de permisos
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/invoices", label: "Facturación", icon: FileText },
   {
-    
+    href: "/",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    moduleId: "dashboard",
+  },
+  {
+    href: "/invoices",
+    label: "Facturación",
+    icon: FileText,
+    moduleId: "invoices",
+  },
+  {
     label: "Gastos recurrentes",
     href: "/compromisos",
     icon: Repeat,
     variant: "ghost",
+    moduleId: "compromisos",
   },
-  { href: "/purchases", label: "Compras", icon: ShoppingBag },
-  { href: "/treasury", label: "Tesorería", icon: Landmark },
   {
-    label: "Control de Cartera", // O "Deuda y Riesgo"
+    href: "/purchases",
+    label: "Compras",
+    icon: ShoppingBag,
+    moduleId: "purchases",
+  },
+  {
+    href: "/treasury",
+    label: "Tesorería",
+    icon: Landmark,
+    moduleId: "treasury",
+  },
+  {
+    label: "Control de Cartera",
     href: "/debt-control",
     icon: ShieldAlert,
+    moduleId: "debt_control",
   },
-
-  { href: "/forecast", label: "Previsión", icon: TrendingUp },
-  { href: "/contabilidad", label: "Contabilidad", icon: Calculator },
-
-  { href: "/tasks", label: "Tareas", icon: CheckSquare },
+  {
+    href: "/forecast",
+    label: "Previsión",
+    icon: TrendingUp,
+    moduleId: "forecast",
+  },
+  {
+    href: "/contabilidad",
+    label: "Contabilidad",
+    icon: Calculator,
+    moduleId: "accounting",
+  },
+  { href: "/tasks", label: "Tareas", icon: CheckSquare, moduleId: "tasks" },
   {
     label: "Informes y Exportación",
     href: "/informes",
     icon: BarChart,
+    moduleId: "reports",
   },
-  { href: "/settings", label: "Configuración", icon: Building2 },
+  {
+    href: "/settings",
+    label: "Configuración",
+    icon: Building2,
+    moduleId: "settings",
+  },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -66,6 +100,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const seedMutation = useSeedData();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const handleSeed = () => {
     seedMutation.mutate(undefined, {
@@ -83,22 +118,57 @@ export function Layout({ children }: { children: ReactNode }) {
   const dynamicLogo = activeCompany?.logo || null;
   const themeColor = activeCompany?.themeColor;
 
+  // Lógica de Permisos
+  // Lógica de Permisos
+  const hasAccessToModule = (moduleId?: string) => {
+    if (!user) return false;
+
+    // CORRECCIÓN 1: Usamos user.role === "admin" tal y como está en tu Base de Datos
+    if (user.role === "admin") return true;
+
+    // El dashboard lo ven todos los usuarios logueados
+    if (moduleId === "dashboard") return true;
+
+    // Si no es admin y no tiene empresa activa seleccionada, no ve módulos específicos
+    if (!activeCompanyId) return false;
+
+    // Buscamos los accesos (usamos == por si uno es string y otro número)
+    const companyAccess = user.companyAccess?.find(
+      (acc: any) => String(acc.companyId) === String(activeCompanyId),
+    );
+
+    if (!companyAccess) return false;
+
+    // Comprobamos si el módulo requerido está dentro de sus permisos
+    return companyAccess.modules.includes(moduleId);
+  };
+
+  // Filtramos la navegación según permisos
+  const filteredNavItems = navItems.filter((item) =>
+    hasAccessToModule(item.moduleId),
+  );
+
   // TAREA 3: Inyección del color de la marca en el background del header.
   // Usamos el 'themeColor' guardado en la DB como un tintado suave (opacidad 10/255 -> ~4%).
-  // Inyección del color de la marca en el background del header.
-
   return (
     <div
       className="min-h-screen bg-background flex flex-col md:flex-row transition-colors duration-500 ease-in-out"
       style={themeColor ? { backgroundColor: themeColor } : undefined}
     >
       {/* Sidebar */}
-      <aside className={cn(
-        "md:bg-white border-r border-border flex-shrink-0 md:h-screen md:sticky md:top-0 z-10 hidden md:flex flex-col transition-all duration-300 overflow-hidden",
-        sidebarCollapsed ? "md:w-0" : "md:w-64"
-      )}>
+      <aside
+        className={cn(
+          "md:bg-white border-r border-border flex-shrink-0 md:h-screen md:sticky md:top-0 z-10 hidden md:flex flex-col transition-all duration-300 overflow-hidden",
+          sidebarCollapsed ? "md:w-0" : "md:w-64",
+        )}
+      >
         <div className="h-20 flex items-center px-6 border-b border-border/50 relative overflow-hidden bg-white justify-center">
-          <div className={cn("flex items-center gap-3 relative z-10", sidebarCollapsed ? "w-full justify-center" : "w-full")}>
+          <div
+            className={cn(
+              "flex items-center gap-3 relative z-10",
+              sidebarCollapsed ? "w-full justify-center" : "w-full",
+            )}
+          >
             <div className="w-12 h-12 rounded-xl bg-white shadow-sm border flex items-center justify-center p-1 shrink-0">
               {dynamicLogo ? (
                 <img
@@ -114,7 +184,8 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
 
         <div className="p-4 flex-1 overflow-y-auto space-y-1 mt-2">
-          {navItems.map((item) => {
+          {/* Mapeamos SOLO los módulos permitidos */}
+          {filteredNavItems.map((item) => {
             const isActive =
               location === item.href ||
               (item.href !== "/" && location.startsWith(item.href));
@@ -153,11 +224,22 @@ export function Layout({ children }: { children: ReactNode }) {
         <header className="h-16 bg-white backdrop-blur-md border-b border-border/50 sticky top-0 z-10 px-4 md:px-8 flex items-center justify-between">
           {/* SECCIÓN IZQUIERDA: Usamos bg-white que ahora funcionará perfecto con tu HEX */}
           <div className="flex items-center gap-4 flex-1 h-full px-2 bg-white transition-colors">
-            <button className="md:hidden p-2 text-muted-foreground" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            <button
+              className="md:hidden p-2 text-muted-foreground"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
               <Menu className="w-6 h-6" />
             </button>
-            <button className="hidden md:block p-2 text-muted-foreground hover:text-foreground" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
-              <ChevronLeft className={cn("w-6 h-6 transition-transform duration-300", sidebarCollapsed && "rotate-180")} />
+            <button
+              className="hidden md:block p-2 text-muted-foreground hover:text-foreground"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            >
+              <ChevronLeft
+                className={cn(
+                  "w-6 h-6 transition-transform duration-300",
+                  sidebarCollapsed && "rotate-180",
+                )}
+              />
             </button>
             <div className="flex items-center gap-2">
               {dynamicLogo && (
@@ -172,7 +254,8 @@ export function Layout({ children }: { children: ReactNode }) {
               <h1 className="font-display font-semibold text-xl hidden sm:block text-primary truncate max-w-sm">
                 {activeCompany
                   ? activeCompany.name
-                  : navItems.find(
+                  : filteredNavItems.find(
+                      // Cambiado a filteredNavItems
                       (n) =>
                         n.href === location ||
                         (n.href !== "/" && location.startsWith(n.href)),
@@ -217,7 +300,8 @@ export function Layout({ children }: { children: ReactNode }) {
         {sidebarOpen && (
           <nav className="md:hidden bg-white border-b border-border">
             <div className="p-4 space-y-1">
-              {navItems.map((item) => {
+              {/* Mapeamos SOLO los módulos permitidos también en mobile */}
+              {filteredNavItems.map((item) => {
                 const isActive =
                   location === item.href ||
                   (item.href !== "/" && location.startsWith(item.href));
