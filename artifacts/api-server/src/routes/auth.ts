@@ -8,6 +8,7 @@ import {
 } from "@workspace/db";
 
 import { eq } from "drizzle-orm";
+import { userCompanyAccess } from "@workspace/db";
 
 const router = Router();
 
@@ -16,7 +17,9 @@ router.post("/auth/login", async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: "Email y contraseña son requeridos" });
+      return res
+        .status(400)
+        .json({ error: "Email y contraseña son requeridos" });
     }
 
     const [user] = await db
@@ -44,7 +47,7 @@ router.post("/auth/register", async (req, res) => {
   try {
     const { name, email, password, token } = req.body;
 
-console.log("🔐 Token Maestro en el .env:", process.env.MASTER_TOKEN);
+    console.log("🔐 Token Maestro en el .env:", process.env.MASTER_TOKEN);
 
     // --- 1. COMPROBAR SI ES EL TOKEN MAESTRO ---
     // (Asegúrate de poner MASTER_TOKEN=tu-clave-secreta en tu archivo .env)
@@ -126,6 +129,59 @@ console.log("🔐 Token Maestro en el .env:", process.env.MASTER_TOKEN);
   } catch (error) {
     console.error("Error en el registro:", error);
     res.status(500).json({ error: "Error en el servidor durante el registro" });
+  }
+});
+
+router.get("/auth/me", async (req, res) => {
+  try {
+    // 1. En un sistema real extraerías el token del header Authorization.
+    // Como tu frontend guarda 'token_1', vamos a sacar el ID de ahí.
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer token_")) {
+      return res.status(401).json({ error: "No autorizado" });
+    }
+
+    const userIdStr = authHeader.replace("Bearer token_", "");
+    const userId = parseInt(userIdStr, 10);
+
+    if (isNaN(userId)) {
+      return res.status(401).json({ error: "Token inválido" });
+    }
+
+    // 2. Buscamos al usuario en la BD
+    const [user] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.id, userId));
+
+    if (!user) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    // 3. Buscamos a qué empresas tiene acceso y qué módulos
+    const accessRecords = await db
+      .select()
+      .from(userCompanyAccess)
+      .where(eq(userCompanyAccess.userId, userId));
+
+    // 4. Formateamos los permisos
+    const companyAccess = accessRecords.map((record) => ({
+      companyId: record.companyId,
+      modules: record.allowedModules || [], // Usamos allowedModules como dictaba la DB
+    }));
+
+    // 5. Devolvemos el usuario SIN el passwordHash pero CON los permisos
+    return res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role, // ESTO ES CLAVE PARA EL ADMIN
+      defaultCompanyId: user.defaultCompanyId,
+      companyAccess: companyAccess,
+    });
+  } catch (error) {
+    console.error("Error en /auth/me:", error);
+    res.status(500).json({ error: "Error en el servidor" });
   }
 });
 

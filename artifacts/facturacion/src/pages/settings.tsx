@@ -1251,11 +1251,12 @@ export default function SettingsPage() {
             </Card>
           </div>
         </TabsContent>
+
+        {/* ---PESTAÑA USUARIOS AUTORIZADOS--- */}
+        <TabsContent value="users">
+          <AuthorizedUsersPanel />
+        </TabsContent>
       </Tabs>
-      {/* ---PESTAÑA USUARIOS AUTORIZADOS--- */}
-      <TabsContent value="users">
-        <AuthorizedUsersPanel />
-      </TabsContent>
 
       {/* --- DIALOG EDITAR EMPRESA --- */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

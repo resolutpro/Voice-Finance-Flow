@@ -12,26 +12,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-// Ajusta hooks según tu API generada
 import {
   usePostAuthorizedUsers,
   usePutAuthorizedUsersUserId,
   useListCompanies,
 } from "@workspace/api-client-react";
 
-// Lista de módulos disponibles en tu app
 const AVAILABLE_MODULES = [
-  { id: "dashboard", label: "Dashboard (Resumen)" },
+  { id: "dashboard", label: "Dashboard / Resumen" },
   { id: "invoices", label: "Ventas y Facturación" },
-  { id: "purchases", label: "Compras y Gastos" },
+  { id: "purchases", label: "Compras y Proveedores" },
   { id: "treasury", label: "Tesorería y Bancos" },
   { id: "forecast", label: "Previsión de Caja" },
-  { id: "tasks", label: "Tareas" },
+  { id: "debt-control", label: "Control de Deuda" },
+  { id: "recurring-commitments", label: "Compromisos Recurrentes" },
+  { id: "contabilidad", label: "Contabilidad" },
+  { id: "tasks", label: "Tareas y Seguimiento" },
+  { id: "informes", label: "Informes y Analytics" },
+  { id: "settings", label: "Configuración" },
 ];
 
 export function UserAccessModal({ isOpen, onClose, user, onSuccess }: any) {
   const { toast } = useToast();
-  // Traemos todas las empresas del owner para poder asignárselas al nuevo usuario
   const { data: companies } = useListCompanies();
 
   const { mutateAsync: createUser, isPending: isCreating } =
@@ -39,25 +41,26 @@ export function UserAccessModal({ isOpen, onClose, user, onSuccess }: any) {
   const { mutateAsync: updateUser, isPending: isUpdating } =
     usePutAuthorizedUsersUserId();
 
+  // 1. Añadimos 'password' al estado inicial
   const [formData, setFormData] = useState({
     email: "",
     name: "",
+    password: "",
   });
 
-  // Estado para guardar la matriz de { companyId, modules: string[] }
   const [accessMap, setAccessMap] = useState<Record<string, string[]>>({});
 
-  // Precargar datos si estamos editando
   useEffect(() => {
     if (user) {
-      setFormData({ email: user.email, name: user.name });
+      // 2. Al editar, cargamos nombre y email, dejamos password vacío (opcional)
+      setFormData({ email: user.email, name: user.name, password: "" });
       const initialAccess: Record<string, string[]> = {};
-      user.companyAccess.forEach((acc: any) => {
-        initialAccess[acc.companyId] = acc.modules;
+      user.companyAccess?.forEach((acc: any) => {
+        initialAccess[acc.companyId] = acc.modules || [];
       });
       setAccessMap(initialAccess);
     } else {
-      setFormData({ email: "", name: "" });
+      setFormData({ email: "", name: "", password: "" });
       setAccessMap({});
     }
   }, [user, isOpen]);
@@ -68,44 +71,63 @@ export function UserAccessModal({ isOpen, onClose, user, onSuccess }: any) {
       const isSelected = currentModules.includes(moduleId);
 
       const newModules = isSelected
-        ? currentModules.filter((m) => m !== moduleId) // Quitar
-        : [...currentModules, moduleId]; // Añadir
+        ? currentModules.filter((m) => m !== moduleId)
+        : [...currentModules, moduleId];
 
       return { ...prev, [companyId]: newModules };
     });
   };
 
   const handleSave = async () => {
+    // Validar contraseña al crear
+    if (!user && formData.password.length < 6) {
+      toast({
+        title: "Error",
+        description: "La contraseña debe tener al menos 6 caracteres.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      // Transformar el record (objeto) de vuelta al array que espera el backend Zod
       const companyAccessPayload = Object.entries(accessMap)
-        .filter(([_, modules]) => modules.length > 0) // Ignorar empresas sin módulos seleccionados
+        .filter(([_, modules]) => modules.length > 0)
         .map(([companyId, modules]) => ({
-          companyId,
+          companyId: parseInt(companyId, 10),
           modules,
         }));
 
       if (user) {
+        // 3. Al actualizar, enviamos los datos del formulario.
+        // Si dejó el password vacío, no lo enviamos.
+        const updatePayload: any = {
+          name: formData.name,
+          email: formData.email,
+          companyAccess: companyAccessPayload,
+        };
+        if (formData.password) updatePayload.password = formData.password;
+
         await updateUser({
           userId: user.id,
-          data: { companyAccess: companyAccessPayload },
+          data: updatePayload,
         });
         toast({
           title: "Permisos actualizados",
-          description: "El acceso se ha modificado correctamente.",
+          description: "El usuario se ha modificado correctamente.",
         });
       } else {
         await createUser({
-          data: { ...formData, companyAccess: companyAccessPayload },
+          data: { ...formData, companyAccess: companyAccessPayload } as any,
         });
         toast({
           title: "Usuario invitado",
-          description: "Se ha creado el acceso correctamente.",
+          description: "Se ha creado el usuario y su acceso.",
         });
       }
       onSuccess();
       onClose();
     } catch (error) {
+      console.error(error);
       toast({
         title: "Error",
         description: "Hubo un problema al guardar.",
@@ -118,11 +140,10 @@ export function UserAccessModal({ isOpen, onClose, user, onSuccess }: any) {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {user ? "Editar Permisos" : "Invitar Usuario"}
-          </DialogTitle>
+          <DialogTitle>{user ? "Editar Usuario" : "Crear Usuario"}</DialogTitle>
           <DialogDescription>
-            Configura a qué empresas y módulos puede acceder este usuario.
+            Configura los datos del usuario y a qué empresas/módulos tiene
+            acceso.
           </DialogDescription>
         </DialogHeader>
 
@@ -130,25 +151,42 @@ export function UserAccessModal({ isOpen, onClose, user, onSuccess }: any) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Nombre</Label>
+              {/* Hemos quitado el disabled={!!user} */}
               <Input
                 value={formData.name}
                 onChange={(e) =>
                   setFormData({ ...formData, name: e.target.value })
                 }
-                disabled={!!user} // No dejar cambiar el nombre si ya existe
                 placeholder="Ej. Juan Pérez"
               />
             </div>
             <div className="space-y-2">
               <Label>Correo Electrónico</Label>
+              {/* Hemos quitado el disabled={!!user} */}
               <Input
                 type="email"
                 value={formData.email}
                 onChange={(e) =>
                   setFormData({ ...formData, email: e.target.value })
                 }
-                disabled={!!user} // No dejar cambiar email si ya existe
                 placeholder="juan@ejemplo.com"
+              />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label>
+                {user ? "Nueva Contraseña (Opcional)" : "Contraseña"}
+              </Label>
+              <Input
+                type="password"
+                value={formData.password}
+                onChange={(e) =>
+                  setFormData({ ...formData, password: e.target.value })
+                }
+                placeholder={
+                  user
+                    ? "Deja en blanco para mantener la actual"
+                    : "Mínimo 6 caracteres"
+                }
               />
             </div>
           </div>
@@ -170,7 +208,7 @@ export function UserAccessModal({ isOpen, onClose, user, onSuccess }: any) {
                         id={`${company.id}-${mod.id}`}
                         checked={(accessMap[company.id] || []).includes(mod.id)}
                         onCheckedChange={() =>
-                          handleModuleToggle(company.id, mod.id)
+                          handleModuleToggle(company.id.toString(), mod.id)
                         }
                       />
                       <Label
@@ -192,7 +230,7 @@ export function UserAccessModal({ isOpen, onClose, user, onSuccess }: any) {
             Cancelar
           </Button>
           <Button onClick={handleSave} disabled={isCreating || isUpdating}>
-            {isCreating || isUpdating ? "Guardando..." : "Guardar Permisos"}
+            {isCreating || isUpdating ? "Guardando..." : "Guardar Usuario"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -119,27 +119,28 @@ export function Layout({ children }: { children: ReactNode }) {
   const themeColor = activeCompany?.themeColor;
 
   // Lógica de Permisos
-  // Lógica de Permisos
   const hasAccessToModule = (moduleId?: string) => {
+    // Si aún no carga el usuario, no mostramos el menú de momento
     if (!user) return false;
 
-    // CORRECCIÓN 1: Usamos user.role === "admin" tal y como está en tu Base de Datos
-    if (user.role === "admin") return true;
+    // 1. Si es ADMIN, tiene acceso total y global a todo.
+    if (user.role?.toLowerCase() === "admin") return true;
 
-    // El dashboard lo ven todos los usuarios logueados
+    // 2. El dashboard es público para todos los logueados
     if (moduleId === "dashboard") return true;
 
-    // Si no es admin y no tiene empresa activa seleccionada, no ve módulos específicos
+    // 3. Si no hay empresa seleccionada, no pueden ver módulos específicos
     if (!activeCompanyId) return false;
 
-    // Buscamos los accesos (usamos == por si uno es string y otro número)
+    // 4. Verificamos si tiene acceso a ESTA empresa en concreto
     const companyAccess = user.companyAccess?.find(
       (acc: any) => String(acc.companyId) === String(activeCompanyId),
     );
 
-    if (!companyAccess) return false;
+    // Si no está autorizado para esta empresa, no ve nada.
+    if (!companyAccess || !companyAccess.modules) return false;
 
-    // Comprobamos si el módulo requerido está dentro de sus permisos
+    // 5. Verificamos si el módulo que intenta renderizar está en su array de permitidos
     return companyAccess.modules.includes(moduleId);
   };
 

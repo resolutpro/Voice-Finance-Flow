@@ -75,28 +75,32 @@ router.get("/authorized-users", async (req: Request, res: Response) => {
 // POST: Crear/Invitar un nuevo usuario
 router.post("/authorized-users", async (req: Request, res: Response) => {
   try {
-    const parsedData = req.body; // O usar parsedData = createAuthorizedUserBody.parse(req.body); si la exportación Zod es estricta
+    // Tomamos todos los campos enviados por el frontend
+    const { email, name, password, companyAccess } = req.body as any;
 
-    // 1. Buscamos si el usuario ya existe usando select() como en auth.ts
+    if (!email || !name || !password) {
+      return res
+        .status(400)
+        .json({ error: "Email, nombre y contraseña son requeridos" });
+    }
+
+    // 1. Buscamos si el usuario ya existe
     let [targetUser] = await db
       .select()
       .from(usersTable)
-      .where(eq(usersTable.email, parsedData.email));
+      .where(eq(usersTable.email, email));
 
-    // 2. Si no existe, lo creamos
+    // 2. Si no existe, lo creamos con el password que nos enviaste
     if (!targetUser) {
-      // Le generamos una contraseña aleatoria ya que es un invitado
-      // (Luego podrías hacer que se le envíe un email para cambiarla)
-      const randomPassword = Math.random().toString(36).slice(-8);
-      const hashedPassword = await bcrypt.hash(randomPassword, 10);
+      const hashedPassword = await bcrypt.hash(password, 10);
 
       const [newUser] = await db
         .insert(usersTable)
         .values({
-          email: parsedData.email,
-          name: parsedData.name,
+          email: email,
+          name: name,
           passwordHash: hashedPassword,
-          role: "user", // Rol por defecto
+          role: "user",
         })
         .returning();
 
@@ -104,15 +108,14 @@ router.post("/authorized-users", async (req: Request, res: Response) => {
     }
 
     // 3. Preparamos los registros de acceso
-    const accessRecords = parsedData.companyAccess.map((access: any) => ({
+    const accessRecords = (companyAccess || []).map((access: any) => ({
       userId: targetUser.id,
       companyId: access.companyId,
       allowedModules: access.modules,
     }));
 
-    // 4. Guardamos los accesos en una transacción
+    // 4. Guardamos los accesos
     await db.transaction(async (tx) => {
-      // Por seguridad, limpiamos accesos previos si lo estamos re-invitando
       await tx
         .delete(userCompanyAccess)
         .where(eq(userCompanyAccess.userId, targetUser.id));
@@ -122,30 +125,44 @@ router.post("/authorized-users", async (req: Request, res: Response) => {
       }
     });
 
-    res.status(201).json({ id: targetUser.id, ...parsedData });
+    res.status(201).json({ id: targetUser.id, email, name });
   } catch (error: any) {
-    if (error.name === "ZodError")
-      return res.status(400).json({ error: error.errors });
     console.error("Error POST authorized-users:", error);
     res.status(500).json({ error: "Error interno del servidor" });
   }
 });
 
-// PUT: Actualizar permisos
+// PUT: Actualizar permisos Y datos del usuario
 router.put("/authorized-users/:userId", async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const parsedData = req.body; // O updateAuthorizedUserBody.parse(req.body);
+    const userId = parseInt(req.params.userId, 10);
+    const { name, email, password, companyAccess } = req.body as any;
 
     await db.transaction(async (tx) => {
-      // Borramos los permisos actuales
+      // 1. Actualizamos los datos básicos en usersTable
+      const updateData: any = {};
+      if (name) updateData.name = name;
+      if (email) updateData.email = email;
+      if (password) {
+        updateData.passwordHash = await bcrypt.hash(password, 10);
+      }
+
+      // Solo actualizamos la tabla si enviaron algún dato básico
+      if (Object.keys(updateData).length > 0) {
+        await tx
+          .update(usersTable)
+          .set(updateData)
+          .where(eq(usersTable.id, userId));
+      }
+
+      // 2. Borramos los permisos actuales
       await tx
         .delete(userCompanyAccess)
         .where(eq(userCompanyAccess.userId, userId));
 
-      // Insertamos los nuevos
-      if (parsedData.companyAccess && parsedData.companyAccess.length > 0) {
-        const accessRecords = parsedData.companyAccess.map((access: any) => ({
+      // 3. Insertamos los nuevos
+      if (companyAccess && companyAccess.length > 0) {
+        const accessRecords = companyAccess.map((access: any) => ({
           userId: userId,
           companyId: access.companyId,
           allowedModules: access.modules,
@@ -154,10 +171,8 @@ router.put("/authorized-users/:userId", async (req: Request, res: Response) => {
       }
     });
 
-    res.json({ message: "Permisos actualizados con éxito" });
+    res.json({ message: "Usuario y permisos actualizados con éxito" });
   } catch (error: any) {
-    if (error.name === "ZodError")
-      return res.status(400).json({ error: error.errors });
     console.error("Error PUT authorized-users:", error);
     res.status(500).json({ error: "Error al actualizar permisos" });
   }
