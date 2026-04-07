@@ -606,13 +606,17 @@ export default function InvoicesPage() {
             continue;
 
           const quantity = qtyIdx !== -1 ? parseFloat(cells[qtyIdx]) || 1 : 1;
-          const unitPrice =
+          const priceWithTax =
             priceIdx !== -1 ? parseFloat(cells[priceIdx]) || 0 : 0;
+
+          // DESGLOSE DE IVA: Extraemos la Base Imponible dividiendo entre 1.21
+          const baseUnitPrice = priceWithTax / 1.21;
 
           items.push({
             description,
             quantity: quantity.toString(),
-            unitPrice: unitPrice.toString(),
+            // Usamos 6 decimales de precisión para evitar el baile de céntimos al recalcular el Total
+            unitPrice: baseUnitPrice.toFixed(6),
           });
         }
       }
