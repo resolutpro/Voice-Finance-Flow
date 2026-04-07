@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCompany } from "@/hooks/use-company";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,9 @@ import {
   Download,
   Search,
   ChevronsUpDown,
+  Upload,
 } from "lucide-react"; // Añadido Search y ChevronsUpDown
+import * as XLSX from "xlsx";
 
 // Diccionario de traducción de campos de Google Document AI
 const AI_FIELD_LABELS: Record<string, string> = {
@@ -108,6 +110,7 @@ export default function InvoicesPage() {
   // === ESTADOS DE LA UI ===
   const [activeTab, setActiveTab] = useState("presupuestos");
   const [isUploading, setIsUploading] = useState(false);
+  const fileInputAlbaranRef = useRef<HTMLInputElement>(null);
 
   // Modal OCR (IA)
   const [showReviewDialog, setShowReviewDialog] = useState(false);
@@ -450,6 +453,7 @@ export default function InvoicesPage() {
         description: "Selecciona una empresa.",
         variant: "destructive",
       });
+
       return;
     }
     setEditingInvoice({
@@ -465,6 +469,277 @@ export default function InvoicesPage() {
     });
   };
 
+  // === LÓGICA PARA PARSEAR ALBARÁN EXCEL/CSV (FRONTEND) ===
+  const handleUploadAlbaran = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!companyId) {
+      toast({
+        title: "Atención",
+        description: "Selecciona una empresa.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      const items: any[] = [];
+      let isItemSection = false;
+
+      // Variables para todos los datos del cliente
+      let clientName = "";
+      let clientNif = "";
+      let clientAddress = "";
+      let clientPhone = "";
+      let clientEmail = "";
+      let clientContact = "";
+
+      let descIdx = -1,
+        qtyIdx = -1,
+        priceIdx = -1;
+
+      for (const rawRow of rows as any[]) {
+        if (!rawRow || !Array.isArray(rawRow) || rawRow.length === 0) continue;
+
+        const cells = rawRow.map((cell) => String(cell || "").trim());
+
+        // 1. EXTRAER DATOS DEL CLIENTE
+        for (let c = 0; c < cells.length; c++) {
+          const cell = cells[c];
+          if (!cell) continue;
+
+          const lowerCell = cell.toLowerCase();
+
+          // Función inteligente: saca el valor de la propia celda (si hay ":") o de las siguientes
+          const getValue = () => {
+            if (cell.includes(":")) {
+              const parts = cell.split(":");
+              const val = parts.slice(1).join(":").trim();
+              if (val) return val;
+            }
+            for (let i = c + 1; i < cells.length; i++) {
+              if (cells[i] && cells[i].trim() !== "") return cells[i].trim();
+            }
+            return "";
+          };
+
+          if (
+            (lowerCell.includes("cliente") ||
+              lowerCell.includes("razón social")) &&
+            !clientName
+          ) {
+            clientName = getValue();
+          } else if (
+            (lowerCell.includes("n.i.f") ||
+              lowerCell.includes("nif") ||
+              lowerCell.includes("cif")) &&
+            !clientNif
+          ) {
+            clientNif = getValue();
+          } else if (
+            (lowerCell.includes("dirección") ||
+              lowerCell.includes("direccion")) &&
+            !clientAddress
+          ) {
+            clientAddress = getValue();
+          } else if (
+            (lowerCell.includes("teléfono") ||
+              lowerCell.includes("telefono")) &&
+            !clientPhone
+          ) {
+            clientPhone = getValue();
+          } else if (
+            (lowerCell.includes("email") || lowerCell.includes("correo")) &&
+            !clientEmail
+          ) {
+            clientEmail = getValue();
+          } else if (
+            lowerCell.includes("persona de contacto") &&
+            !clientContact
+          ) {
+            clientContact = getValue();
+          }
+        }
+
+        // 2. DETECTAR DÓNDE EMPIEZA LA TABLA DE PRODUCTOS
+        if (!isItemSection) {
+          const lowerCellsForHeaders = cells.map((c) => c.toLowerCase());
+          if (
+            lowerCellsForHeaders.includes("código") ||
+            lowerCellsForHeaders.includes("descripción") ||
+            lowerCellsForHeaders.includes("artículo")
+          ) {
+            isItemSection = true;
+            descIdx = lowerCellsForHeaders.findIndex(
+              (c) => c.includes("descripción") || c.includes("artículo"),
+            );
+            qtyIdx = lowerCellsForHeaders.findIndex((c) => c === "unidades");
+            if (qtyIdx === -1)
+              qtyIdx = lowerCellsForHeaders.findIndex(
+                (c) => c.includes("cant") || c.includes("cajas"),
+              );
+            priceIdx = lowerCellsForHeaders.findIndex((c) =>
+              c.includes("precio"),
+            );
+            continue;
+          }
+        }
+
+        // 3. EXTRAER LAS LÍNEAS DE PRODUCTOS
+        if (isItemSection && descIdx !== -1 && cells[descIdx]) {
+          const description = cells[descIdx];
+
+          if (
+            description.toLowerCase() === "descripción" ||
+            description === "undefined" ||
+            description === "null"
+          )
+            continue;
+
+          const quantity = qtyIdx !== -1 ? parseFloat(cells[qtyIdx]) || 1 : 1;
+          const unitPrice =
+            priceIdx !== -1 ? parseFloat(cells[priceIdx]) || 0 : 0;
+
+          items.push({
+            description,
+            quantity: quantity.toString(),
+            unitPrice: unitPrice.toString(),
+          });
+        }
+      }
+
+      if (items.length > 0) {
+        let finalClientId = undefined;
+
+        // 4. BUSCAR O CREAR EL CLIENTE
+        if (clientName || clientNif) {
+          const matchedClient = clients?.find(
+            (c: any) =>
+              (clientNif && c.taxId === clientNif) ||
+              (clientName && c.name.toLowerCase() === clientName.toLowerCase()),
+          );
+
+          if (matchedClient) {
+            finalClientId = matchedClient.id;
+            clientName = matchedClient.name;
+          } else if (clientName) {
+            try {
+              // Preparamos el payload con todos los datos detectados, omitiendo los vacíos
+              // Magia extra: Extraer Código Postal y Ciudad de la dirección
+              let extractedPostalCode = "";
+              let extractedCity = "";
+              let extractedAddress = clientAddress;
+
+              if (clientAddress) {
+                const cpMatch = clientAddress.match(/\b\d{5}\b/); // Busca 5 números seguidos
+                if (cpMatch) {
+                  extractedPostalCode = cpMatch[0];
+                  // Asumimos que lo que hay después del CP es la ciudad
+                  const parts = clientAddress.split(extractedPostalCode);
+                  if (parts.length > 1) {
+                    // Limpiamos la ciudad (quitamos puntos, comas o espacios al inicio)
+                    extractedCity = parts[1].replace(/^[.\s,-]+/, "").trim();
+                    // Opcional: Dejar la dirección limpia sin el CP y ciudad
+                    extractedAddress = parts[0].replace(/[,\s]+$/, "").trim();
+                  }
+                }
+              }
+
+              // Preparamos el payload satisfaciendo a Zod (enviando strings vacíos si no hay dato)
+              const clientPayload = {
+                companyId: companyId,
+                name: clientName,
+                taxId: clientNif || "",
+                address: extractedAddress || "",
+                phone: clientPhone || undefined,
+                email: clientEmail || undefined,
+                contactPerson: clientContact || undefined,
+                // Campos requeridos por tu API:
+                city: extractedCity || "",
+                province: "", // El Excel no lo suele traer claro, lo mandamos vacío para pasar la validación
+                postalCode: extractedPostalCode || "",
+              };
+
+              console.log(
+                "➡️ FRONTEND: Payload a enviar a la API:",
+                clientPayload,
+              );
+
+              // LOG 1: Vemos qué ha extraído exactamente el Excel y qué vamos a enviar
+              console.log(
+                "➡️ FRONTEND: Payload a enviar a la API:",
+                clientPayload,
+              );
+
+              const res = await fetch("/api/clients", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(clientPayload),
+              });
+
+              if (res.ok) {
+                const newClient = await res.json();
+                finalClientId =
+                  newClient?.data?.id ||
+                  newClient?.id ||
+                  (Array.isArray(newClient) ? newClient[0]?.id : undefined);
+                toast({
+                  title: "Cliente Creado",
+                  description: `Se ha registrado a ${clientName} con todos sus datos.`,
+                });
+              }
+            } catch (e) {
+              console.error("Error creando cliente:", e);
+            }
+          }
+        }
+
+        // 5. ABRIR EL MODAL DE FACTURA
+        setEditingInvoice({
+          isNew: true,
+          type: "invoice",
+          status: "borrador",
+          invoiceNumber: "",
+          clientId: finalClientId,
+          clientName: clientName || "",
+          issueDate: new Date().toISOString().split("T")[0],
+          concept: "Facturación de albarán",
+          taxRate: 21, // <--- Cambiado de nuevo al 21%
+          items: items,
+        });
+
+        toast({
+          title: "Albarán procesado",
+          description: `Se precargaron ${items.length} productos con 0% de IVA.`,
+        });
+      } else {
+        toast({
+          title: "Sin datos",
+          description: "No se encontraron productos en el archivo.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error parseando archivo:", error);
+      toast({
+        title: "Error",
+        description: "El archivo no se pudo leer correctamente.",
+        variant: "destructive",
+      });
+    } finally {
+      if (event.target) event.target.value = "";
+    }
+  };
+
   return (
     <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto">
       {/* HEADER CON BOTONES ALINEADOS A LA DERECHA */}
@@ -478,9 +753,25 @@ export default function InvoicesPage() {
 
         <div className="flex gap-3">
           {activeTab === "emitidas" && (
-            <Button onClick={() => handleCreateNewDocument("invoice")}>
-              <Plus className="w-4 h-4 mr-2" /> Nueva Factura (Venta)
-            </Button>
+            <>
+              <input
+                type="file"
+                accept=".csv, .xls, .xlsx, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                className="hidden"
+                ref={fileInputAlbaranRef}
+                onChange={handleUploadAlbaran}
+              />
+              <Button
+                variant="outline"
+                className="bg-secondary/50 hover:bg-secondary border-border"
+                onClick={() => fileInputAlbaranRef.current?.click()}
+              >
+                <Upload className="w-4 h-4 mr-2" /> Desde Albarán
+              </Button>
+              <Button onClick={() => handleCreateNewDocument("invoice")}>
+                <Plus className="w-4 h-4 mr-2" /> Nueva Factura (Venta)
+              </Button>
+            </>
           )}
 
           {activeTab === "presupuestos" && (
@@ -540,7 +831,7 @@ export default function InvoicesPage() {
       )}
 
       <Tabs
-        defaultValue="emitidas"
+        defaultValue="presupuestos"
         onValueChange={setActiveTab}
         className="space-y-6"
       >

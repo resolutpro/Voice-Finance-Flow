@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import multer from "multer";
 import { eq, desc, and, like } from "drizzle-orm";
 import {
   db,
@@ -25,6 +26,7 @@ import {
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 interface ProcessedItem {
   description: string;
@@ -496,5 +498,51 @@ router.post("/invoices/:id/payment", async (req, res): Promise<void> => {
   const result = await getInvoiceWithItems(params.data.id);
   res.json(result);
 });
+
+router.post(
+  "/invoices/parse-albaran",
+  upload.single("file"),
+  async (req, res): Promise<void> => {
+    if (!req.file) {
+      res.status(400).json({ error: "No se proporcionó ningún archivo" });
+      return;
+    }
+
+    const content = req.file.buffer.toString("utf-8");
+    const lines = content.split("\n");
+    const items = [];
+    let isItemSection = false;
+
+    for (const line of lines) {
+      // Regex para separar por comas ignorando las que estén dentro de comillas dobles
+      const cols = line
+        .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
+        .map((c) => c.replace(/^"|"$/g, "").trim());
+
+      // Detectamos el inicio de la tabla de productos
+      if (cols[0] === "Código" && cols[2] === "Descripción") {
+        isItemSection = true;
+        continue;
+      }
+
+      // Si estamos en la sección de items, extraemos Unidades (índice 4) y Precio (índice 5)
+      if (isItemSection && cols.length >= 6 && cols[2]) {
+        const description = cols[2];
+        const quantity = parseFloat(cols[4]) || 1;
+        const unitPrice = parseFloat(cols[5]) || 0;
+
+        if (description) {
+          items.push({
+            description,
+            quantity: quantity.toString(),
+            unitPrice: unitPrice.toString(),
+          });
+        }
+      }
+    }
+
+    res.json({ items });
+  },
+);
 
 export default router;

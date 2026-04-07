@@ -29,15 +29,33 @@ router.get("/clients", async (req, res): Promise<void> => {
 });
 
 router.post("/clients", async (req, res): Promise<void> => {
+  // LOG 2: Vemos qué le llega al servidor exactamente
+  console.log("📥 BACKEND: Body recibido en POST /clients:", req.body);
+
   const parsed = CreateClientBody.safeParse(req.body);
   if (!parsed.success) {
+    // LOG 3: Si Zod rechaza algo, veremos exactamente el qué
+    console.error(
+      "❌ BACKEND: Error de validación Zod:",
+      parsed.error.format(),
+    );
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  // LOG 4: Vemos qué datos han sobrevivido al filtro de validación de Zod
+  console.log(
+    "✅ BACKEND: Datos validados por Zod listos para BD:",
+    parsed.data,
+  );
+
   const [client] = await db
     .insert(clientsTable)
     .values(parsed.data)
     .returning();
+
+  // LOG 5: Comprobamos cómo ha quedado en la base de datos realmente
+  console.log("💾 BACKEND: Cliente guardado en BD:", client);
   res.status(201).json(client);
 });
 
