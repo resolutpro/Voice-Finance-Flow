@@ -40,8 +40,8 @@ function ModuleGuard({
   const { user } = useAuth();
   const { activeCompanyId } = useCompany();
 
-  // CORRECCIÓN 2: Validamos si el rol es "admin"
-  if (user?.role === "admin" || requiredModule === "dashboard") {
+  // CORRECCIÓN 1: Validamos SOLO si el rol es "admin", quitamos "|| requiredModule === 'dashboard'"
+  if (user?.role === "admin") {
     return <>{children}</>;
   }
 
@@ -57,7 +57,20 @@ function ModuleGuard({
   }
 
   if (!hasAccess) {
-    return <Redirect to="/" />;
+    // CORRECCIÓN 2: Evitamos el Redirect a "/" para no crear un bucle infinito
+    // En su lugar, mostramos un mensaje amigable indicando que debe seleccionar una empresa
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-4">
+        <h2 className="text-2xl font-semibold text-primary">
+          Acceso Restringido
+        </h2>
+        <p className="text-muted-foreground max-w-md">
+          {!activeCompanyId
+            ? "Por favor, selecciona una empresa en el menú superior para ver su información."
+            : "No tienes permisos asignados para visualizar este módulo en la empresa actual."}
+        </p>
+      </div>
+    );
   }
 
   return <>{children}</>;

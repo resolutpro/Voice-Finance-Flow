@@ -31,6 +31,7 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
 
   try {
     // 1. Obtener la lista de nombres de clientes de la empresa activa para darle contexto a la IA
+    // 1. Obtener la lista de clientes (código que ya tienes)
     const companyClients = await db
       .select({ name: clientsTable.name })
       .from(clientsTable)
@@ -38,18 +39,46 @@ router.post("/voice/parse", async (req, res): Promise<void> => {
 
     const clientNamesStr = companyClients.map((c) => c.name).join(", ");
 
-    // 2. Prompt mejorado para extraer array de ítems en facturas/presupuestos
+    // NUEVO: Obtener el catálogo de productos y sus tarifas
+    const { productsTable } = await import("@workspace/db/schema");
+    const companyProducts = await db
+      .select({
+        name: productsTable.name,
+        price: productsTable.price,
+        priceTiers: productsTable.priceTiers,
+      })
+      .from(productsTable)
+      .where(eq(productsTable.companyId, activeCompanyId));
+
+    // Formateamos el catálogo para que la IA lo entienda fácil:
+    // Ejemplo: "- Tomate Frito (Base: 1.50, Variantes: Caja 12: 15.00)"
+    const productsContext = companyProducts
+      .map((p) => {
+        const tiersStr = (p.priceTiers || [])
+          .map((t: any) => `${t.name}: ${t.price}`)
+          .join(", ");
+        return `- ${p.name} (Base: ${p.price}${tiersStr ? `, Variantes: ${tiersStr}` : ""})`;
+      })
+      .join("\n");
+
+    // 2. Prompt mejorado (Actualiza tu systemPrompt con esto)
     const systemPrompt = `
       Eres el asistente de voz de una aplicación de facturación.
       Hoy es ${new Date().toISOString().split("T")[0]}.
       Analiza la transcripción y extrae la intención y los datos relevantes.
 
       Clientes registrados en esta empresa: [${clientNamesStr || "Ninguno"}].
-      Si el usuario menciona a un cliente, intenta emparejarlo usando EXACTAMENTE el nombre de esta lista si suena similar.
-      ¡IMPORTANTE!: Si el usuario menciona un cliente que NO está en la lista, extrae su nombre tal cual lo ha pronunciado. NO lo omitas ni lo dejes en null.
+      Si el usuario menciona a un cliente, intenta emparejarlo usando EXACTAMENTE el nombre de esta lista.
+
+      Catálogo de productos y precios:
+      ${productsContext || "Ninguno"}
+
+      INSTRUCCIÓN DE PRECIOS: Si el usuario pide añadir un producto que está en el catálogo, extrae el concepto con su nombre exacto. 
+      Si menciona una variante (por ejemplo "caja de...", "pack de..."), mira si existe en las "Variantes" y asigna el precio correspondiente de esa variante al campo "amount". Si no especifica variante, asigna el precio "Base" al campo "amount". 
+      Si el usuario dicta un precio explícito, prioriza el que dice el usuario.
 
       Identifica si el usuario quiere crear una FACTURA ("invoice") o un PRESUPUESTO ("quote"). Si no lo especifica, asume "invoice".
-      IMPORTANTE: Si el usuario menciona Varios conceptos, productos o servicios, extráelos TODOS en el array "items". Si no especifica una cantidad para un ítem, asume 1.
+      IMPORTANTE: Si el usuario menciona varios conceptos, extráelos TODOS en el array "items". Si no especifica una cantidad, asume 1.
 
       Responde ÚNICAMENTE con JSON válido:
       {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCompany } from "@/hooks/use-company";
 import { Button } from "@/components/ui/button";
@@ -22,8 +22,30 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { UploadCloud, FileText, Plus, Loader2, Eye } from "lucide-react";
-import { Download } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  UploadCloud,
+  FileText,
+  Plus,
+  Loader2,
+  Eye,
+  Download,
+  Search,
+  ChevronsUpDown,
+} from "lucide-react"; // Añadido Search y ChevronsUpDown
 
 // Diccionario de traducción de campos de Google Document AI
 const AI_FIELD_LABELS: Record<string, string> = {
@@ -108,6 +130,64 @@ export default function InvoicesPage() {
     (inv) => inv.type === "invoice" || !inv.type,
   );
   const presupuestos = invoices.filter((inv) => inv.type === "quote");
+
+  // === QUERIES DE CLIENTES Y PRODUCTOS ===
+  const { data: clients } = useQuery({
+    queryKey: ["clients", companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+      const res = await fetch(`/api/clients?companyId=${companyId}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!companyId,
+  });
+
+  const { data: products } = useQuery({
+    queryKey: ["products", companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+      const res = await fetch(`/api/products?companyId=${companyId}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!companyId,
+  });
+
+  const productOptions = useMemo(() => {
+    if (!products) return [];
+    const options: any[] = [];
+
+    products.forEach((p: any) => {
+      // 1. Añadimos el producto con su precio base
+      options.push({
+        id: `base_${p.id}`,
+        displayName: `${p.name} (Base: ${p.price}€)`,
+        description: p.name,
+        price: p.price,
+        taxRate: p.taxRate,
+      });
+
+      // 2. Si tiene diferentes tarifas (Caja, Pallet...), las añadimos también
+      if (p.priceTiers && Array.isArray(p.priceTiers)) {
+        p.priceTiers.forEach((tier: any, tIdx: number) => {
+          options.push({
+            id: `tier_${p.id}_${tIdx}`,
+            displayName: `${p.name} - ${tier.name} (${tier.price}€)`,
+            description: `${p.name} - ${tier.name}`,
+            price: tier.price,
+            taxRate: p.taxRate,
+          });
+        });
+      }
+    });
+    return options;
+  }, [products]);
+
+  // Estado para saber qué menú de buscador está abierto en las líneas de factura
+  const [openProductSearch, setOpenProductSearch] = useState<number | null>(
+    null,
+  );
 
   // === UI HELPER: BOTÓN DESCARGA ===
   const renderDownloadButton = (id: number) => (
@@ -1053,9 +1133,12 @@ export default function InvoicesPage() {
                         )
                       ) {
                         try {
-                          await fetch(`/api/vendor-invoices/${selectedVendorInvoice.id}`, {
-                            method: "DELETE",
-                          });
+                          await fetch(
+                            `/api/vendor-invoices/${selectedVendorInvoice.id}`,
+                            {
+                              method: "DELETE",
+                            },
+                          );
                           toast({ title: "Factura eliminada" });
                           setSelectedVendorInvoice(null);
                           loadVendorInvoices();
@@ -1127,22 +1210,51 @@ export default function InvoicesPage() {
               return (
                 <div className="space-y-6">
                   <div className="grid grid-cols-2 gap-4 bg-muted/30 p-4 rounded-lg border">
-                    <div>
+                    <div className="flex flex-col gap-1">
                       <Label className="text-xs text-muted-foreground">
                         Cliente
                       </Label>
-                      <Input
-                        disabled={isReadonly}
-                        value={editingInvoice.clientName || ""}
-                        onChange={(e) =>
-                          setEditingInvoice({
-                            ...editingInvoice,
-                            clientName: e.target.value,
-                          })
-                        }
-                        className="mt-1 disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
-                        placeholder="Nombre del cliente"
-                      />
+                      <div className="flex gap-2">
+                        <select
+                          disabled={isReadonly}
+                          className="flex h-10 w-1/2 items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
+                          value={editingInvoice.clientId || ""}
+                          onChange={(e) => {
+                            const selectedId = e.target.value
+                              ? Number(e.target.value)
+                              : undefined;
+                            const selectedClient = clients?.find(
+                              (c: any) => c.id === selectedId,
+                            );
+                            setEditingInvoice({
+                              ...editingInvoice,
+                              clientId: selectedId,
+                              clientName: selectedClient
+                                ? selectedClient.name
+                                : "",
+                            });
+                          }}
+                        >
+                          <option value="">-- Nuevo / Libre --</option>
+                          {clients?.map((client: any) => (
+                            <option key={client.id} value={client.id}>
+                              {client.name}
+                            </option>
+                          ))}
+                        </select>
+                        <Input
+                          disabled={isReadonly || !!editingInvoice.clientId}
+                          value={editingInvoice.clientName || ""}
+                          onChange={(e) =>
+                            setEditingInvoice({
+                              ...editingInvoice,
+                              clientName: e.target.value,
+                            })
+                          }
+                          className="w-1/2 disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
+                          placeholder="Escribe el nombre..."
+                        />
+                      </div>
                     </div>
                     <div>
                       <Label className="text-xs text-muted-foreground">
@@ -1327,15 +1439,79 @@ export default function InvoicesPage() {
                                   }}
                                 />
                               </TableCell>
-                              <TableCell className="p-2">
+                              <TableCell className="p-2 flex gap-2 items-center min-w-[450px]">
+                                <Popover
+                                  open={openProductSearch === idx}
+                                  onOpenChange={(isOpen) =>
+                                    setOpenProductSearch(isOpen ? idx : null)
+                                  }
+                                >
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      role="combobox"
+                                      aria-expanded={openProductSearch === idx}
+                                      className="w-[240px] justify-between px-3 bg-white dark:bg-zinc-950 font-normal shrink-0"
+                                      disabled={isReadonly}
+                                      title="Buscar en catálogo"
+                                    >
+                                      <Search className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
+                                      <span className="truncate flex-1 text-left text-muted-foreground">
+                                        Buscar producto...
+                                      </span>
+                                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent
+                                    className="w-[350px] p-0"
+                                    align="start"
+                                  >
+                                    <Command>
+                                      <CommandInput placeholder="Buscar por nombre o tarifa..." />
+                                      <CommandList>
+                                        <CommandEmpty>
+                                          No se encontraron productos.
+                                        </CommandEmpty>
+                                        <CommandGroup>
+                                          {productOptions.map((opt) => (
+                                            <CommandItem
+                                              key={opt.id}
+                                              value={opt.displayName} // Esto permite que el buscador filtre por este texto
+                                              onSelect={() => {
+                                                const newItems = [
+                                                  ...editingInvoice.items,
+                                                ];
+                                                newItems[idx].description =
+                                                  opt.description;
+                                                newItems[idx].unitPrice =
+                                                  opt.price;
+                                                setEditingInvoice({
+                                                  ...editingInvoice,
+                                                  items: newItems,
+                                                  taxRate:
+                                                    opt.taxRate ||
+                                                    editingInvoice.taxRate,
+                                                });
+                                                setOpenProductSearch(null); // Cierra el desplegable al elegir
+                                              }}
+                                            >
+                                              {opt.displayName}
+                                            </CommandItem>
+                                          ))}
+                                        </CommandGroup>
+                                      </CommandList>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
+
                                 <Input
-                                  type="number"
                                   disabled={isReadonly}
-                                  className="text-right disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
-                                  value={item.unitPrice}
+                                  className="flex-1 disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
+                                  value={item.description}
+                                  placeholder="Concepto libre o modificado..."
                                   onChange={(e) => {
                                     const newItems = [...editingInvoice.items];
-                                    newItems[idx].unitPrice = e.target.value;
+                                    newItems[idx].description = e.target.value;
                                     setEditingInvoice({
                                       ...editingInvoice,
                                       items: newItems,

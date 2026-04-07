@@ -126,13 +126,13 @@ export function Layout({ children }: { children: ReactNode }) {
     // 1. Si es ADMIN, tiene acceso total y global a todo.
     if (user.role?.toLowerCase() === "admin") return true;
 
-    // 2. El dashboard es público para todos los logueados
-    if (moduleId === "dashboard") return true;
+    // ELIMINAR LA LÍNEA QUE HACÍA EL DASHBOARD PÚBLICO:
+    // if (moduleId === "dashboard") return true;
 
-    // 3. Si no hay empresa seleccionada, no pueden ver módulos específicos
+    // 2. Si no hay empresa seleccionada, no pueden ver módulos específicos (ahora tampoco el dashboard)
     if (!activeCompanyId) return false;
 
-    // 4. Verificamos si tiene acceso a ESTA empresa en concreto
+    // 3. Verificamos si tiene acceso a ESTA empresa en concreto
     const companyAccess = user.companyAccess?.find(
       (acc: any) => String(acc.companyId) === String(activeCompanyId),
     );
@@ -140,7 +140,7 @@ export function Layout({ children }: { children: ReactNode }) {
     // Si no está autorizado para esta empresa, no ve nada.
     if (!companyAccess || !companyAccess.modules) return false;
 
-    // 5. Verificamos si el módulo que intenta renderizar está en su array de permitidos
+    // 4. Verificamos si el módulo que intenta renderizar está en su array de permitidos
     return companyAccess.modules.includes(moduleId);
   };
 

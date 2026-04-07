@@ -156,6 +156,16 @@ export default function SettingsPage() {
   const [editingClient, setEditingClient] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isEditClientDialogOpen, setIsEditClientDialogOpen] = useState(false);
+  // --- ESTADOS DE PRODUCTOS ---
+  const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [isEditProductDialogOpen, setIsEditProductDialogOpen] = useState(false);
+  const [productFormData, setProductFormData] = useState({
+    name: "",
+    price: "",
+    taxRate: "",
+    active: true,
+    priceTiers: [] as { name: string; price: number }[],
+  });
 
   // --- MUTACIONES EMPRESAS ---
   const createCompanyMutation = useMutation({
@@ -341,6 +351,40 @@ export default function SettingsPage() {
         queryKey: ["products", selectedCompanyId],
       });
     },
+  });
+  const updateProductMutation = useMutation({
+    mutationFn: async (data: {
+      id: number;
+      formData: typeof productFormData;
+    }) => {
+      const res = await fetch(`/api/products/${data.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data.formData),
+      });
+      if (!res.ok) throw new Error("Error al actualizar producto");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "✅ Producto actualizado" });
+      setIsEditProductDialogOpen(false);
+      setEditingProduct(null);
+      setProductFormData({
+        name: "",
+        price: "",
+        taxRate: "",
+        active: true,
+        priceTiers: [],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["products", selectedCompanyId],
+      });
+    },
+    onError: () =>
+      toast({
+        title: "❌ Error al actualizar producto",
+        variant: "destructive",
+      }),
   });
 
   // --- MANEJADORES DE SUBIDA DE ARCHIVOS ---
@@ -1228,7 +1272,26 @@ export default function SettingsPage() {
                             </TableCell>
                             <TableCell>{prod.price}€</TableCell>
                             <TableCell>{prod.taxRate}%</TableCell>
-                            <TableCell>
+                            <TableCell className="flex gap-2 justify-end">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-blue-500 hover:text-blue-700"
+                                onClick={() => {
+                                  setEditingProduct(prod);
+                                  setProductFormData({
+                                    name: prod.name || "",
+                                    price: prod.price?.toString() || "0",
+                                    taxRate: prod.taxRate?.toString() || "0",
+                                    active: prod.active ?? true,
+                                    priceTiers: prod.priceTiers || [], // Carga las tarifas si existen
+                                  });
+                                  setIsEditProductDialogOpen(true);
+                                }}
+                                title="Editar"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1237,6 +1300,7 @@ export default function SettingsPage() {
                                   deleteProductMutation.mutate(prod.id)
                                 }
                                 disabled={deleteProductMutation.isPending}
+                                title="Borrar"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1616,6 +1680,175 @@ export default function SettingsPage() {
                 {updateClientMutation.isPending
                   ? "Guardando..."
                   : "Guardar Cambios"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      {/* --- DIALOG EDITAR PRODUCTO Y TARIFAS --- */}
+      <Dialog
+        open={isEditProductDialogOpen}
+        onOpenChange={setIsEditProductDialogOpen}
+      >
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Producto y Tarifas</DialogTitle>
+            <DialogDescription>
+              Modifica el nombre base y añade variantes de precio (ej: Caja de
+              12 uds, Pallet).
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (editingProduct) {
+                updateProductMutation.mutate({
+                  id: editingProduct.id,
+                  formData: productFormData,
+                });
+              }
+            }}
+            className="space-y-4"
+          >
+            <div className="grid gap-2">
+              <Label>Nombre del Artículo base</Label>
+              <Input
+                value={productFormData.name}
+                onChange={(e) =>
+                  setProductFormData({
+                    ...productFormData,
+                    name: e.target.value,
+                  })
+                }
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Precio Base (€)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={productFormData.price}
+                  onChange={(e) =>
+                    setProductFormData({
+                      ...productFormData,
+                      price: e.target.value,
+                    })
+                  }
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>IGIC (%)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={productFormData.taxRate}
+                  onChange={(e) =>
+                    setProductFormData({
+                      ...productFormData,
+                      taxRate: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+
+            {/* SECCIÓN DINÁMICA: TARIFAS/FORMATOS */}
+            <div className="mt-4 border-t pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold">
+                  Formatos o Tarifas Especiales
+                </Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setProductFormData({
+                      ...productFormData,
+                      priceTiers: [
+                        ...productFormData.priceTiers,
+                        { name: "", price: 0 },
+                      ],
+                    })
+                  }
+                >
+                  + Añadir formato
+                </Button>
+              </div>
+
+              {productFormData.priceTiers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No hay tarifas adicionales configuradas.
+                </p>
+              ) : (
+                productFormData.priceTiers.map((tier, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <Input
+                      placeholder="Ej: Caja de 12 uds"
+                      value={tier.name}
+                      onChange={(e) => {
+                        const newTiers = [...productFormData.priceTiers];
+                        newTiers[idx].name = e.target.value;
+                        setProductFormData({
+                          ...productFormData,
+                          priceTiers: newTiers,
+                        });
+                      }}
+                      required
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="Precio"
+                      className="w-32"
+                      value={tier.price === 0 ? "" : tier.price}
+                      onChange={(e) => {
+                        const newTiers = [...productFormData.priceTiers];
+                        newTiers[idx].price = Number(e.target.value);
+                        setProductFormData({
+                          ...productFormData,
+                          priceTiers: newTiers,
+                        });
+                      }}
+                      required
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="text-red-500 hover:text-red-700 shrink-0"
+                      onClick={() => {
+                        const newTiers = productFormData.priceTiers.filter(
+                          (_, i) => i !== idx,
+                        );
+                        setProductFormData({
+                          ...productFormData,
+                          priceTiers: newTiers,
+                        });
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <DialogFooter className="pt-4 border-t mt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditProductDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={updateProductMutation.isPending}>
+                {updateProductMutation.isPending
+                  ? "Guardando..."
+                  : "Guardar Producto"}
               </Button>
             </DialogFooter>
           </form>

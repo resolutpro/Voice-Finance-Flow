@@ -28,6 +28,39 @@ router.get("/products", async (req, res) => {
   }
 });
 
+// PUT - Actualizar un producto existente (incluyendo tarifas)
+router.put("/products/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { name, price, taxRate, active, priceTiers } = req.body;
+
+    if (!id) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Falta el ID del producto" });
+    }
+
+    await db
+      .update(productsTable)
+      .set({
+        name,
+        price: price ? String(price) : undefined,
+        taxRate: taxRate ? String(taxRate) : undefined,
+        active,
+        priceTiers: priceTiers || [],
+        updatedAt: new Date(),
+      })
+      .where(eq(productsTable.id, id));
+
+    res.json({ success: true, message: "Producto actualizado correctamente" });
+  } catch (error) {
+    console.error("Error updating product:", error);
+    res
+      .status(500)
+      .json({ success: false, error: "Error interno del servidor" });
+  }
+});
+
 // DELETE - Delete a product
 router.delete("/products/:id", async (req, res) => {
   try {
@@ -81,13 +114,11 @@ router.post("/products/bulk", async (req, res) => {
 
     await db.insert(productsTable).values(validatedProducts);
 
-    res
-      .status(201)
-      .json({
-        success: true,
-        count: validatedProducts.length,
-        message: "Products imported successfully",
-      });
+    res.status(201).json({
+      success: true,
+      count: validatedProducts.length,
+      message: "Products imported successfully",
+    });
   } catch (error) {
     console.error("Error bulk inserting products:", error);
     res.status(500).json({
