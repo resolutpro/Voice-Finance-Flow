@@ -503,92 +503,45 @@ router.post(
   "/invoices/parse-albaran",
   upload.single("file"),
   async (req, res): Promise<void> => {
-    console.log("=========================================");
-    console.log("🚨 [START] Petición recibida en /parse-albaran");
-    console.log("Headers content-type:", req.headers["content-type"]);
-
-    // 1. Verificación de archivo
+    console.log("🚨 ¡Petición recibida en /parse-albaran!");
+    console.log("Headers:", req.headers["content-type"]);
     if (!req.file) {
-      console.error(
-        "❌ ERROR: No se detectó req.file. Verifica que el form-data use la key 'file'.",
-      );
       res.status(400).json({ error: "No se proporcionó ningún archivo" });
       return;
     }
 
-    // 2. Log de metadatos del archivo
-    console.log("📄 Detalles del archivo recibido:", {
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: `${req.file.size} bytes`,
-      hasBuffer: !!req.file.buffer, // <-- Si esto es false, multer no está en memoryStorage
-    });
-
-    if (!req.file.buffer) {
-      console.error("❌ ERROR CRÍTICO: req.file.buffer es undefined.");
-      res
-        .status(500)
-        .json({
-          error: "Configuración de multer incorrecta (falta memoryStorage)",
-        });
-      return;
-    }
-
-    // 3. Verificación de la codificación
     const content = req.file.buffer.toString("utf-8");
-    console.log(
-      `📝 Preview del contenido (primeros 150 chars):\n${content.substring(0, 150)}...\n---`,
-    );
-
     const lines = content.split("\n");
-    console.log(`📊 Total de líneas detectadas tras el split: ${lines.length}`);
-
     const items = [];
     let isItemSection = false;
 
-    // 4. Debug del bucle de parsing
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (!line.trim()) continue; // Ignorar líneas en blanco
-
+    for (const line of lines) {
+      // Regex para separar por comas ignorando las que estén dentro de comillas dobles
       const cols = line
         .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
         .map((c) => c.replace(/^"|"$/g, "").trim());
 
-      // Log para ver cómo está leyendo las primeras 5 líneas
-      if (i < 5) {
-        console.log(`🔍 [Línea ${i}] Array de columnas:`, cols);
-      }
-
-      // Detectamos el inicio de la tabla
+      // Detectamos el inicio de la tabla de productos
       if (cols[0] === "Código" && cols[2] === "Descripción") {
-        console.log(`🎯 ¡BINGO! Sección de items detectada en la línea: ${i}`);
         isItemSection = true;
         continue;
       }
 
-      // 5. Verificación de extracción de items
+      // Si estamos en la sección de items, extraemos Unidades (índice 4) y Precio (índice 5)
       if (isItemSection && cols.length >= 6 && cols[2]) {
         const description = cols[2];
         const quantity = parseFloat(cols[4]) || 1;
         const unitPrice = parseFloat(cols[5]) || 0;
 
-        console.log(
-          `➕ Extrayendo -> Desc: [${description}] | Cant: ${quantity} | Precio: ${unitPrice}`,
-        );
-
-        items.push({
-          description,
-          quantity: quantity.toString(),
-          unitPrice: unitPrice.toString(),
-        });
+        if (description) {
+          items.push({
+            description,
+            quantity: quantity.toString(),
+            unitPrice: unitPrice.toString(),
+          });
+        }
       }
     }
-
-    console.log(
-      `✅ [END] Parseo finalizado. Items válidos extraídos: ${items.length}`,
-    );
-    console.log("=========================================");
 
     res.json({ items });
   },
