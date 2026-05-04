@@ -503,6 +503,8 @@ router.post(
   "/invoices/parse-albaran",
   upload.single("file"),
   async (req, res): Promise<void> => {
+    console.log("🚨 ¡Petición recibida en /parse-albaran!");
+    console.log("Headers:", req.headers["content-type"]);
     if (!req.file) {
       res.status(400).json({ error: "No se proporcionó ningún archivo" });
       return;
