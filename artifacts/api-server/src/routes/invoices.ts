@@ -502,7 +502,7 @@ router.post("/invoices/:id/payment", async (req, res): Promise<void> => {
 });
 
 router.post(
-  "/parse-albaran", // Asegúrate de montar esto bajo el prefijo /invoices
+  "/invoices/parse-albaran", // Asegúrate de montar esto bajo el prefijo /invoices
   upload.single("file"),
   async (req, res): Promise<void> => {
     try {
@@ -651,11 +651,9 @@ router.post(
       }
 
       if (items.length === 0) {
-        res
-          .status(400)
-          .json({
-            error: "No se encontraron líneas de productos en el Excel.",
-          });
+        res.status(400).json({
+          error: "No se encontraron líneas de productos en el Excel.",
+        });
         return;
       }
 
