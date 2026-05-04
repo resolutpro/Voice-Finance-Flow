@@ -713,7 +713,7 @@ router.post(
 
         // B. Calcular Totales de la factura
         const subtotal = items.reduce((acc, item) => acc + item.amount, 0);
-        const taxRate = 21; // 21% fijo
+        const taxRate = 21;
         const taxAmount = subtotal * (taxRate / 100);
         const total = subtotal + taxAmount;
 
@@ -724,12 +724,16 @@ router.post(
             companyId: parseInt(companyId),
             clientId: finalClientId,
             type: "invoice",
+            // 🚨 SOLUCIÓN 1: Le damos un número temporal único para que Postgres no estalle
+            invoiceNumber: `BORRADOR-${Date.now()}`,
             status: "borrador",
             issueDate: new Date().toISOString().split("T")[0],
+            // 🚨 SOLUCIÓN 2: Asignamos el dueDate igual que el issueDate por si la BD lo exige
+            dueDate: new Date().toISOString().split("T")[0],
             concept: "Facturación de albarán automático",
-            // SOLUCIÓN: Forzamos la precisión a 2 decimales para satisfacer a Postgres
             subtotal: subtotal.toFixed(2),
-            taxRate: taxRate.toFixed(2),
+            // 🚨 SOLUCIÓN 3: El taxRate como string sin decimales ("21") por si la BD exige Integer
+            taxRate: taxRate.toString(),
             taxAmount: taxAmount.toFixed(2),
             total: total.toFixed(2),
           })
