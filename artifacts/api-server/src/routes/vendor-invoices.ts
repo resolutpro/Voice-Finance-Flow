@@ -258,7 +258,7 @@ router.post(
 );
 
 // ============================================================================
-// 1.5 ENDPOINT PARA OPENCLAW: PROCESAR EXCEL Y GUARDAR AUTOMÁTICAMENTE
+// 1.5 ENDPOINT PARA OPENCLAW: RUTEO INTELIGENTE (PDF o EXCEL) Y AUTOGUARDADO
 // ============================================================================
 
 router.post(
@@ -278,152 +278,197 @@ router.post(
         return;
       }
 
-      console.log(`🤖 [OPENCLAW-AUTO] Procesando Excel: ${file.originalname}`);
+      const isPDF = file.mimetype === "application/pdf";
+      console.log(
+        `🤖 [OPENCLAW-AUTO] Procesando ${isPDF ? "PDF" : "EXCEL"}: ${file.originalname}`,
+      );
 
-      // 1. LEER EL EXCEL DESDE EL BUFFER
-      const workbook = XLSX.read(file.buffer, { type: "buffer" });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-      const items: any[] = [];
-      let isItemSection = false;
-
+      let items: any[] = [];
       let supplierName = "";
       let supplierNif = "";
-      let supplierAddress = "";
-      let supplierPhone = "";
-      let supplierEmail = "";
-      let supplierContact = "";
+      let supplierAddress = "Pendiente";
+      let invoiceNumber = `AUTO-${Date.now()}`;
+      let issueDate = new Date().toISOString().split("T")[0];
 
-      let descIdx = -1,
-        qtyIdx = -1,
-        priceIdx = -1;
+      // ==========================================
+      // RAMA A: ES UN PDF (Usamos Google Document AI)
+      // ==========================================
+      if (isPDF) {
+        let projectId =
+          docAiConfig.projectId || process.env.DOCUMENT_AI_PROJECT_ID;
+        const location = process.env.DOCUMENT_AI_LOCATION;
+        const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID;
 
-      // 2. EXTRAER DATOS DEL EXCEL
-      for (const rawRow of rows as any[]) {
-        if (!rawRow || !Array.isArray(rawRow) || rawRow.length === 0) continue;
+        const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
+        const [result] = await docAiClient.processDocument({
+          name,
+          rawDocument: {
+            content: file.buffer.toString("base64"),
+            mimeType: file.mimetype,
+          },
+        });
 
-        const cells = rawRow.map((cell) => String(cell || "").trim());
-
-        // Extraer Proveedor (Adaptado de la lógica de clientes)
-        for (let c = 0; c < cells.length; c++) {
-          const cell = cells[c];
-          if (!cell) continue;
-          const lowerCell = cell.toLowerCase();
-
-          const getValue = () => {
-            if (cell.includes(":")) {
-              const parts = cell.split(":");
-              const val = parts.slice(1).join(":").trim();
-              if (val) return val;
-            }
-            for (let i = c + 1; i < cells.length; i++) {
-              if (cells[i] && cells[i].trim() !== "") return cells[i].trim();
-            }
-            return "";
-          };
-
-          if (
-            (lowerCell.includes("proveedor") ||
-              lowerCell.includes("razón social") ||
-              lowerCell.includes("cliente")) &&
-            !supplierName
-          ) {
-            supplierName = getValue();
-          } else if (
-            (lowerCell.includes("n.i.f") ||
-              lowerCell.includes("nif") ||
-              lowerCell.includes("cif")) &&
-            !supplierNif
-          ) {
-            supplierNif = getValue();
-          } else if (
-            (lowerCell.includes("dirección") ||
-              lowerCell.includes("direccion")) &&
-            !supplierAddress
-          ) {
-            supplierAddress = getValue();
-          } else if (
-            (lowerCell.includes("teléfono") ||
-              lowerCell.includes("telefono")) &&
-            !supplierPhone
-          ) {
-            supplierPhone = getValue();
-          } else if (
-            (lowerCell.includes("email") || lowerCell.includes("correo")) &&
-            !supplierEmail
-          ) {
-            supplierEmail = getValue();
-          } else if (
-            lowerCell.includes("persona de contacto") &&
-            !supplierContact
-          ) {
-            supplierContact = getValue();
-          }
+        if (!result.document || !result.document.entities) {
+          res
+            .status(400)
+            .json({ error: "Google AI no pudo extraer datos del PDF" });
+          return;
         }
 
-        // Detectar Tabla
-        if (!isItemSection) {
-          const lowerCellsForHeaders = cells.map((c) => c.toLowerCase());
-          if (
-            lowerCellsForHeaders.includes("código") ||
-            lowerCellsForHeaders.includes("descripción") ||
-            lowerCellsForHeaders.includes("artículo")
-          ) {
-            isItemSection = true;
-            descIdx = lowerCellsForHeaders.findIndex(
-              (c) => c.includes("descripción") || c.includes("artículo"),
-            );
-            qtyIdx = lowerCellsForHeaders.findIndex((c) => c === "unidades");
-            if (qtyIdx === -1)
-              qtyIdx = lowerCellsForHeaders.findIndex(
-                (c) => c.includes("cant") || c.includes("cajas"),
+        result.document.entities.forEach((entity) => {
+          const type = entity.type;
+          const textValue =
+            entity.mentionText || entity.normalizedValue?.text || "";
+
+          if (type === "supplier_name") supplierName = textValue;
+          if (type === "supplier_tax_id") supplierNif = textValue;
+          if (type === "invoice_id") invoiceNumber = textValue;
+          if (type === "invoice_date") {
+            issueDate = entity.normalizedValue?.dateValue
+              ? `${entity.normalizedValue.dateValue.year}-${String(entity.normalizedValue.dateValue.month).padStart(2, "0")}-${String(entity.normalizedValue.dateValue.day).padStart(2, "0")}`
+              : textValue;
+          }
+
+          if (type === "line_item" && entity.properties) {
+            let line = {
+              description: textValue,
+              quantity: 1,
+              unitPrice: 0,
+              amount: 0,
+            };
+            entity.properties.forEach((prop) => {
+              const pType = prop.type;
+              const pText =
+                prop.mentionText || prop.normalizedValue?.text || "";
+              if (pType.includes("description")) line.description = pText;
+              if (pType.includes("quantity"))
+                line.quantity =
+                  parseFloat(
+                    pText.replace(/[^0-9.,]+/g, "").replace(",", "."),
+                  ) || 1;
+              if (pType.includes("unit_price"))
+                line.unitPrice =
+                  parseFloat(
+                    pText.replace(/[^0-9.,]+/g, "").replace(",", "."),
+                  ) || 0;
+              if (pType.includes("amount"))
+                line.amount =
+                  parseFloat(
+                    pText.replace(/[^0-9.,]+/g, "").replace(",", "."),
+                  ) || 0;
+            });
+            items.push(line);
+          }
+        });
+
+        // ==========================================
+        // RAMA B: ES UN EXCEL (Usamos XLSX)
+        // ==========================================
+      } else {
+        const workbook = XLSX.read(file.buffer, { type: "buffer" });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+        let isItemSection = false;
+        let descIdx = -1,
+          qtyIdx = -1,
+          priceIdx = -1;
+
+        for (const rawRow of rows as any[]) {
+          if (!rawRow || !Array.isArray(rawRow) || rawRow.length === 0)
+            continue;
+          const cells = rawRow.map((cell) => String(cell || "").trim());
+
+          for (let c = 0; c < cells.length; c++) {
+            const cell = cells[c];
+            if (!cell) continue;
+            const lowerCell = cell.toLowerCase();
+
+            const getValue = () => {
+              if (cell.includes(":"))
+                return cell.split(":").slice(1).join(":").trim();
+              for (let i = c + 1; i < cells.length; i++)
+                if (cells[i] && cells[i].trim() !== "") return cells[i].trim();
+              return "";
+            };
+
+            if (
+              (lowerCell.includes("proveedor") ||
+                lowerCell.includes("cliente")) &&
+              !supplierName
+            )
+              supplierName = getValue();
+            if (
+              (lowerCell.includes("nif") || lowerCell.includes("cif")) &&
+              !supplierNif
+            )
+              supplierNif = getValue();
+            if (
+              lowerCell.includes("dirección") &&
+              supplierAddress === "Pendiente"
+            )
+              supplierAddress = getValue();
+          }
+
+          if (!isItemSection) {
+            const lowerHeaders = cells.map((c) => c.toLowerCase());
+            if (
+              lowerHeaders.includes("descripción") ||
+              lowerHeaders.includes("artículo") ||
+              lowerHeaders.includes("código")
+            ) {
+              isItemSection = true;
+              descIdx = lowerHeaders.findIndex(
+                (c) => c.includes("descripción") || c.includes("artículo"),
               );
-            priceIdx = lowerCellsForHeaders.findIndex((c) =>
-              c.includes("precio"),
-            );
-            continue;
+              qtyIdx = lowerHeaders.findIndex(
+                (c) => c === "unidades" || c.includes("cant"),
+              );
+              priceIdx = lowerHeaders.findIndex((c) => c.includes("precio"));
+              continue;
+            }
+          }
+
+          if (isItemSection && descIdx !== -1 && cells[descIdx]) {
+            const description = cells[descIdx];
+            if (
+              description.toLowerCase() === "descripción" ||
+              description === "undefined"
+            )
+              continue;
+
+            const quantity = qtyIdx !== -1 ? parseFloat(cells[qtyIdx]) || 1 : 1;
+            const priceWithTax =
+              priceIdx !== -1 ? parseFloat(cells[priceIdx]) || 0 : 0;
+            const baseUnitPrice = priceWithTax / 1.21;
+
+            items.push({
+              description,
+              quantity,
+              unitPrice: baseUnitPrice,
+              amount: quantity * baseUnitPrice,
+            });
           }
         }
-
-        // Extraer Items
-        if (isItemSection && descIdx !== -1 && cells[descIdx]) {
-          const description = cells[descIdx];
-          if (
-            description.toLowerCase() === "descripción" ||
-            description === "undefined" ||
-            description === "null"
-          )
-            continue;
-
-          const quantity = qtyIdx !== -1 ? parseFloat(cells[qtyIdx]) || 1 : 1;
-          const priceWithTax =
-            priceIdx !== -1 ? parseFloat(cells[priceIdx]) || 0 : 0;
-          const baseUnitPrice = priceWithTax / 1.21; // Asumiendo 21% IVA incluido
-
-          items.push({
-            description,
-            quantity,
-            unitPrice: baseUnitPrice,
-            amount: quantity * baseUnitPrice,
-          });
-        }
       }
 
+      // Validamos que haya líneas en cualquier caso
       if (items.length === 0) {
-        res
-          .status(400)
-          .json({
-            error: "No se encontraron líneas de productos en el Excel.",
-          });
-        return;
+        // Fallback: si no hay líneas, metemos un genérico para no romper la BD
+        items.push({
+          description: "Concepto general extraído",
+          quantity: 1,
+          unitPrice: 0,
+          amount: 0,
+        });
       }
 
-      // 3. TRANSACCIÓN: BUSCAR PROVEEDOR Y GUARDAR FACTURA
+      // ==========================================
+      // CONVERGENCIA: TRANSACCIÓN DE BASE DE DATOS
+      // ==========================================
       const result = await db.transaction(async (tx) => {
         let finalSupplierId = null;
 
-        // A. Resolver Proveedor
         if (supplierName || supplierNif) {
           const existingSuppliers = await tx
             .select()
@@ -441,70 +486,52 @@ router.post(
           if (existingSuppliers.length > 0) {
             finalSupplierId = existingSuppliers[0].id;
           } else if (supplierName) {
-            // Crear nuevo proveedor si no existe
-            let extractedPostalCode = "";
-            let extractedCity = "";
-            let extractedAddress = supplierAddress;
-
-            if (supplierAddress) {
-              const cpMatch = supplierAddress.match(/\b\d{5}\b/);
-              if (cpMatch) {
-                extractedPostalCode = cpMatch[0];
-                const parts = supplierAddress.split(extractedPostalCode);
-                if (parts.length > 1) {
-                  extractedCity = parts[1].replace(/^[.\s,-]+/, "").trim();
-                  extractedAddress = parts[0].replace(/[,\s]+$/, "").trim();
-                }
-              }
-            }
-
             const [newSupplier] = await tx
               .insert(suppliersTable)
               .values({
                 companyId: parseInt(companyId),
                 name: supplierName,
                 taxId: supplierNif || "PENDIENTE",
-                address: extractedAddress || "Pendiente",
-                city: extractedCity || "Pendiente",
-                postalCode: extractedPostalCode || "00000",
+                address: supplierAddress,
+                city: "Pendiente",
+                postalCode: "00000",
               })
               .returning();
             finalSupplierId = newSupplier.id;
           }
         }
 
-        // B. Calcular Totales
         const subtotal = items.reduce((acc, item) => acc + item.amount, 0);
         const taxRate = 21;
         const taxAmount = subtotal * (taxRate / 100);
         const total = subtotal + taxAmount;
 
-        // C. Crear la Factura Recibida (Vendor Invoice)
         const [invoice] = await tx
           .insert(vendorInvoicesTable)
           .values({
             companyId: parseInt(companyId),
             supplierId: finalSupplierId,
-            invoiceNumber: `AUTO-${Date.now()}`, // Identificador único temporal
-            status: "borrador", // Puedes cambiarlo a 'pendiente_pago' si estás seguro de la extracción
-            issueDate: new Date().toISOString().split("T")[0],
-            dueDate: new Date().toISOString().split("T")[0],
-            description: "Albarán procesado automáticamente por OpenClaw",
+            invoiceNumber: invoiceNumber,
+            status: "borrador",
+            issueDate: issueDate,
+            dueDate: issueDate,
+            description: `Documento procesado automáticamente (${isPDF ? "IA" : "Excel"})`,
             subtotal: subtotal.toFixed(2),
             taxRate: taxRate.toString(),
             taxAmount: taxAmount.toFixed(2),
             total: total.toFixed(2),
-            extractedData: { source: "OpenClaw Auto Parse" }, // Para tener un rastro
+            extractedData: {
+              source: isPDF ? "Google Document AI" : "XLSX Parser",
+            },
           })
           .returning();
 
-        // D. Insertar Líneas
         const itemsToInsert = items.map((item) => ({
           vendorInvoiceId: invoice.id,
-          description: item.description,
-          quantity: item.quantity.toString(),
-          unitPrice: item.unitPrice.toFixed(6),
-          amount: item.amount.toFixed(6),
+          description: item.description || "Sin descripción",
+          quantity: (item.quantity || 1).toString(),
+          unitPrice: (item.unitPrice || 0).toFixed(6),
+          amount: (item.amount || 0).toFixed(6),
         }));
 
         await tx.insert(vendorInvoiceItemsTable).values(itemsToInsert);
@@ -518,7 +545,7 @@ router.post(
       res.status(201).json({ success: true, invoiceId: result.invoiceId });
     } catch (error: any) {
       console.error(
-        "❌ [OPENCLAW-AUTO] Error procesando Excel automático:",
+        "❌ [OPENCLAW-AUTO] Error general procesando archivo:",
         error,
       );
       res
