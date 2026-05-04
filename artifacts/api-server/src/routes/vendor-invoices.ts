@@ -258,6 +258,277 @@ router.post(
 );
 
 // ============================================================================
+// 1.5 ENDPOINT PARA OPENCLAW: PROCESAR EXCEL Y GUARDAR AUTOMÁTICAMENTE
+// ============================================================================
+
+router.post(
+  "/vendor-invoices/parse/auto",
+  upload.single("file"),
+  async (req, res): Promise<void> => {
+    try {
+      const file = req.file;
+      const companyId = req.body.companyId;
+
+      if (!file || !file.buffer) {
+        res.status(400).json({ error: "No se proporcionó ningún archivo" });
+        return;
+      }
+      if (!companyId) {
+        res.status(400).json({ error: "Falta el companyId" });
+        return;
+      }
+
+      console.log(`🤖 [OPENCLAW-AUTO] Procesando Excel: ${file.originalname}`);
+
+      // 1. LEER EL EXCEL DESDE EL BUFFER
+      const workbook = XLSX.read(file.buffer, { type: "buffer" });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      const items: any[] = [];
+      let isItemSection = false;
+
+      let supplierName = "";
+      let supplierNif = "";
+      let supplierAddress = "";
+      let supplierPhone = "";
+      let supplierEmail = "";
+      let supplierContact = "";
+
+      let descIdx = -1,
+        qtyIdx = -1,
+        priceIdx = -1;
+
+      // 2. EXTRAER DATOS DEL EXCEL
+      for (const rawRow of rows as any[]) {
+        if (!rawRow || !Array.isArray(rawRow) || rawRow.length === 0) continue;
+
+        const cells = rawRow.map((cell) => String(cell || "").trim());
+
+        // Extraer Proveedor (Adaptado de la lógica de clientes)
+        for (let c = 0; c < cells.length; c++) {
+          const cell = cells[c];
+          if (!cell) continue;
+          const lowerCell = cell.toLowerCase();
+
+          const getValue = () => {
+            if (cell.includes(":")) {
+              const parts = cell.split(":");
+              const val = parts.slice(1).join(":").trim();
+              if (val) return val;
+            }
+            for (let i = c + 1; i < cells.length; i++) {
+              if (cells[i] && cells[i].trim() !== "") return cells[i].trim();
+            }
+            return "";
+          };
+
+          if (
+            (lowerCell.includes("proveedor") ||
+              lowerCell.includes("razón social") ||
+              lowerCell.includes("cliente")) &&
+            !supplierName
+          ) {
+            supplierName = getValue();
+          } else if (
+            (lowerCell.includes("n.i.f") ||
+              lowerCell.includes("nif") ||
+              lowerCell.includes("cif")) &&
+            !supplierNif
+          ) {
+            supplierNif = getValue();
+          } else if (
+            (lowerCell.includes("dirección") ||
+              lowerCell.includes("direccion")) &&
+            !supplierAddress
+          ) {
+            supplierAddress = getValue();
+          } else if (
+            (lowerCell.includes("teléfono") ||
+              lowerCell.includes("telefono")) &&
+            !supplierPhone
+          ) {
+            supplierPhone = getValue();
+          } else if (
+            (lowerCell.includes("email") || lowerCell.includes("correo")) &&
+            !supplierEmail
+          ) {
+            supplierEmail = getValue();
+          } else if (
+            lowerCell.includes("persona de contacto") &&
+            !supplierContact
+          ) {
+            supplierContact = getValue();
+          }
+        }
+
+        // Detectar Tabla
+        if (!isItemSection) {
+          const lowerCellsForHeaders = cells.map((c) => c.toLowerCase());
+          if (
+            lowerCellsForHeaders.includes("código") ||
+            lowerCellsForHeaders.includes("descripción") ||
+            lowerCellsForHeaders.includes("artículo")
+          ) {
+            isItemSection = true;
+            descIdx = lowerCellsForHeaders.findIndex(
+              (c) => c.includes("descripción") || c.includes("artículo"),
+            );
+            qtyIdx = lowerCellsForHeaders.findIndex((c) => c === "unidades");
+            if (qtyIdx === -1)
+              qtyIdx = lowerCellsForHeaders.findIndex(
+                (c) => c.includes("cant") || c.includes("cajas"),
+              );
+            priceIdx = lowerCellsForHeaders.findIndex((c) =>
+              c.includes("precio"),
+            );
+            continue;
+          }
+        }
+
+        // Extraer Items
+        if (isItemSection && descIdx !== -1 && cells[descIdx]) {
+          const description = cells[descIdx];
+          if (
+            description.toLowerCase() === "descripción" ||
+            description === "undefined" ||
+            description === "null"
+          )
+            continue;
+
+          const quantity = qtyIdx !== -1 ? parseFloat(cells[qtyIdx]) || 1 : 1;
+          const priceWithTax =
+            priceIdx !== -1 ? parseFloat(cells[priceIdx]) || 0 : 0;
+          const baseUnitPrice = priceWithTax / 1.21; // Asumiendo 21% IVA incluido
+
+          items.push({
+            description,
+            quantity,
+            unitPrice: baseUnitPrice,
+            amount: quantity * baseUnitPrice,
+          });
+        }
+      }
+
+      if (items.length === 0) {
+        res
+          .status(400)
+          .json({
+            error: "No se encontraron líneas de productos en el Excel.",
+          });
+        return;
+      }
+
+      // 3. TRANSACCIÓN: BUSCAR PROVEEDOR Y GUARDAR FACTURA
+      const result = await db.transaction(async (tx) => {
+        let finalSupplierId = null;
+
+        // A. Resolver Proveedor
+        if (supplierName || supplierNif) {
+          const existingSuppliers = await tx
+            .select()
+            .from(suppliersTable)
+            .where(
+              and(
+                eq(suppliersTable.companyId, parseInt(companyId)),
+                supplierNif
+                  ? eq(suppliersTable.taxId, supplierNif)
+                  : ilike(suppliersTable.name, `%${supplierName}%`),
+              ),
+            )
+            .limit(1);
+
+          if (existingSuppliers.length > 0) {
+            finalSupplierId = existingSuppliers[0].id;
+          } else if (supplierName) {
+            // Crear nuevo proveedor si no existe
+            let extractedPostalCode = "";
+            let extractedCity = "";
+            let extractedAddress = supplierAddress;
+
+            if (supplierAddress) {
+              const cpMatch = supplierAddress.match(/\b\d{5}\b/);
+              if (cpMatch) {
+                extractedPostalCode = cpMatch[0];
+                const parts = supplierAddress.split(extractedPostalCode);
+                if (parts.length > 1) {
+                  extractedCity = parts[1].replace(/^[.\s,-]+/, "").trim();
+                  extractedAddress = parts[0].replace(/[,\s]+$/, "").trim();
+                }
+              }
+            }
+
+            const [newSupplier] = await tx
+              .insert(suppliersTable)
+              .values({
+                companyId: parseInt(companyId),
+                name: supplierName,
+                taxId: supplierNif || "PENDIENTE",
+                address: extractedAddress || "Pendiente",
+                city: extractedCity || "Pendiente",
+                postalCode: extractedPostalCode || "00000",
+              })
+              .returning();
+            finalSupplierId = newSupplier.id;
+          }
+        }
+
+        // B. Calcular Totales
+        const subtotal = items.reduce((acc, item) => acc + item.amount, 0);
+        const taxRate = 21;
+        const taxAmount = subtotal * (taxRate / 100);
+        const total = subtotal + taxAmount;
+
+        // C. Crear la Factura Recibida (Vendor Invoice)
+        const [invoice] = await tx
+          .insert(vendorInvoicesTable)
+          .values({
+            companyId: parseInt(companyId),
+            supplierId: finalSupplierId,
+            invoiceNumber: `AUTO-${Date.now()}`, // Identificador único temporal
+            status: "borrador", // Puedes cambiarlo a 'pendiente_pago' si estás seguro de la extracción
+            issueDate: new Date().toISOString().split("T")[0],
+            dueDate: new Date().toISOString().split("T")[0],
+            description: "Albarán procesado automáticamente por OpenClaw",
+            subtotal: subtotal.toFixed(2),
+            taxRate: taxRate.toString(),
+            taxAmount: taxAmount.toFixed(2),
+            total: total.toFixed(2),
+            extractedData: { source: "OpenClaw Auto Parse" }, // Para tener un rastro
+          })
+          .returning();
+
+        // D. Insertar Líneas
+        const itemsToInsert = items.map((item) => ({
+          vendorInvoiceId: invoice.id,
+          description: item.description,
+          quantity: item.quantity.toString(),
+          unitPrice: item.unitPrice.toFixed(6),
+          amount: item.amount.toFixed(6),
+        }));
+
+        await tx.insert(vendorInvoiceItemsTable).values(itemsToInsert);
+
+        return { invoiceId: invoice.id, supplierId: finalSupplierId };
+      });
+
+      console.log(
+        `✅ [OPENCLAW-AUTO] Factura recibida creada exitosamente. ID: ${result.invoiceId}`,
+      );
+      res.status(201).json({ success: true, invoiceId: result.invoiceId });
+    } catch (error: any) {
+      console.error(
+        "❌ [OPENCLAW-AUTO] Error procesando Excel automático:",
+        error,
+      );
+      res
+        .status(500)
+        .json({ error: "Fallo al procesar automáticamente el archivo." });
+    }
+  },
+);
+
+// ============================================================================
 // 2. RUTAS CRUD (GUARDAR Y RECUPERAR TODO)
 // ============================================================================
 
