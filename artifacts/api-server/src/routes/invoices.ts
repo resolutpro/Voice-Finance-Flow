@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import { eq, desc, and, like } from "drizzle-orm";
+import { eq, desc, and, ilike } from "drizzle-orm";
 import {
   db,
   invoicesTable,
@@ -24,6 +24,8 @@ import {
   RegisterInvoicePaymentParams,
   RegisterInvoicePaymentBody,
 } from "@workspace/api-zod";
+
+import * as XLSX from "xlsx";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -503,47 +505,221 @@ router.post(
   "/invoices/parse-albaran",
   upload.single("file"),
   async (req, res): Promise<void> => {
-    console.log("🚨 ¡Petición recibida en /parse-albaran!");
-    console.log("Headers:", req.headers["content-type"]);
-    if (!req.file) {
-      res.status(400).json({ error: "No se proporcionó ningún archivo" });
-      return;
-    }
+    try {
+      const file = req.file;
+      const companyId = req.body.companyId;
 
-    const content = req.file.buffer.toString("utf-8");
-    const lines = content.split("\n");
-    const items = [];
-    let isItemSection = false;
-
-    for (const line of lines) {
-      // Regex para separar por comas ignorando las que estén dentro de comillas dobles
-      const cols = line
-        .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
-        .map((c) => c.replace(/^"|"$/g, "").trim());
-
-      // Detectamos el inicio de la tabla de productos
-      if (cols[0] === "Código" && cols[2] === "Descripción") {
-        isItemSection = true;
-        continue;
+      if (!file || !file.buffer) {
+        res.status(400).json({ error: "No se proporcionó ningún archivo" });
+        return;
+      }
+      if (!companyId) {
+        res.status(400).json({ error: "Falta el companyId" });
+        return;
       }
 
-      // Si estamos en la sección de items, extraemos Unidades (índice 4) y Precio (índice 5)
-      if (isItemSection && cols.length >= 6 && cols[2]) {
-        const description = cols[2];
-        const quantity = parseFloat(cols[4]) || 1;
-        const unitPrice = parseFloat(cols[5]) || 0;
+      console.log(`🚀 Procesando Excel: ${file.originalname}`);
 
-        if (description) {
+      // 1. LEER EL EXCEL DESDE EL BUFFER
+      const workbook = XLSX.read(file.buffer, { type: "buffer" });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      const items: any[] = [];
+      let isItemSection = false;
+
+      let clientName = "";
+      let clientNif = "";
+      let clientAddress = "";
+      let clientPhone = "";
+      let clientEmail = "";
+      let clientContact = "";
+
+      let descIdx = -1,
+        qtyIdx = -1,
+        priceIdx = -1;
+
+      // 2. PARSEO DE FILAS (Tu misma lógica del frontend)
+      for (const rawRow of rows as any[]) {
+        if (!rawRow || !Array.isArray(rawRow) || rawRow.length === 0) continue;
+
+        const cells = rawRow.map((cell) => String(cell || "").trim());
+
+        // Extraer Cliente
+        for (let c = 0; c < cells.length; c++) {
+          const cell = cells[c];
+          if (!cell) continue;
+          const lowerCell = cell.toLowerCase();
+
+          const getValue = () => {
+            if (cell.includes(":")) {
+              const parts = cell.split(":");
+              const val = parts.slice(1).join(":").trim();
+              if (val) return val;
+            }
+            for (let i = c + 1; i < cells.length; i++) {
+              if (cells[i] && cells[i].trim() !== "") return cells[i].trim();
+            }
+            return "";
+          };
+
+          if (
+            (lowerCell.includes("cliente") ||
+              lowerCell.includes("razón social")) &&
+            !clientName
+          ) {
+            clientName = getValue();
+          } else if (
+            (lowerCell.includes("n.i.f") ||
+              lowerCell.includes("nif") ||
+              lowerCell.includes("cif")) &&
+            !clientNif
+          ) {
+            clientNif = getValue();
+          } else if (
+            (lowerCell.includes("dirección") ||
+              lowerCell.includes("direccion")) &&
+            !clientAddress
+          ) {
+            clientAddress = getValue();
+          } else if (
+            (lowerCell.includes("teléfono") ||
+              lowerCell.includes("telefono")) &&
+            !clientPhone
+          ) {
+            clientPhone = getValue();
+          } else if (
+            (lowerCell.includes("email") || lowerCell.includes("correo")) &&
+            !clientEmail
+          ) {
+            clientEmail = getValue();
+          } else if (
+            lowerCell.includes("persona de contacto") &&
+            !clientContact
+          ) {
+            clientContact = getValue();
+          }
+        }
+
+        // Detectar Tabla
+        if (!isItemSection) {
+          const lowerCellsForHeaders = cells.map((c) => c.toLowerCase());
+          if (
+            lowerCellsForHeaders.includes("código") ||
+            lowerCellsForHeaders.includes("descripción") ||
+            lowerCellsForHeaders.includes("artículo")
+          ) {
+            isItemSection = true;
+            descIdx = lowerCellsForHeaders.findIndex(
+              (c) => c.includes("descripción") || c.includes("artículo"),
+            );
+            qtyIdx = lowerCellsForHeaders.findIndex((c) => c === "unidades");
+            if (qtyIdx === -1)
+              qtyIdx = lowerCellsForHeaders.findIndex(
+                (c) => c.includes("cant") || c.includes("cajas"),
+              );
+            priceIdx = lowerCellsForHeaders.findIndex((c) =>
+              c.includes("precio"),
+            );
+            continue;
+          }
+        }
+
+        // Extraer Items
+        if (isItemSection && descIdx !== -1 && cells[descIdx]) {
+          const description = cells[descIdx];
+          if (
+            description.toLowerCase() === "descripción" ||
+            description === "undefined" ||
+            description === "null"
+          )
+            continue;
+
+          const quantity = qtyIdx !== -1 ? parseFloat(cells[qtyIdx]) || 1 : 1;
+          const priceWithTax =
+            priceIdx !== -1 ? parseFloat(cells[priceIdx]) || 0 : 0;
+          const baseUnitPrice = priceWithTax / 1.21;
+
           items.push({
             description,
             quantity: quantity.toString(),
-            unitPrice: unitPrice.toString(),
+            unitPrice: baseUnitPrice.toFixed(6),
           });
         }
       }
-    }
 
-    res.json({ items });
+      // 3. BUSCAR O CREAR CLIENTE EN BASE DE DATOS
+      let finalClientId = null;
+
+      if (clientName || clientNif) {
+        // Buscar cliente existente
+        const existingClients = await db
+          .select()
+          .from(clientsTable)
+          .where(
+            and(
+              eq(clientsTable.companyId, parseInt(companyId)),
+              clientNif
+                ? eq(clientsTable.taxId, clientNif)
+                : ilike(clientsTable.name, `%${clientName}%`),
+            ),
+          )
+          .limit(1);
+
+        if (existingClients.length > 0) {
+          finalClientId = existingClients[0].id;
+        } else if (clientName) {
+          // Crear nuevo cliente si no existe
+          let extractedPostalCode = "";
+          let extractedCity = "";
+          let extractedAddress = clientAddress;
+
+          if (clientAddress) {
+            const cpMatch = clientAddress.match(/\b\d{5}\b/);
+            if (cpMatch) {
+              extractedPostalCode = cpMatch[0];
+              const parts = clientAddress.split(extractedPostalCode);
+              if (parts.length > 1) {
+                extractedCity = parts[1].replace(/^[.\s,-]+/, "").trim();
+                extractedAddress = parts[0].replace(/[,\s]+$/, "").trim();
+              }
+            }
+          }
+
+          const [newClient] = await db
+            .insert(clientsTable)
+            .values({
+              companyId: parseInt(companyId),
+              name: clientName,
+              taxId: clientNif || "PENDIENTE",
+              address: extractedAddress || "",
+              phone: clientPhone || null,
+              email: clientEmail || null,
+              contactPerson: clientContact || null,
+              city: extractedCity || "",
+              postalCode: extractedPostalCode || "",
+            })
+            .returning();
+
+          finalClientId = newClient.id;
+        }
+      }
+
+      console.log(
+        `✅ Excel procesado. Items: ${items.length}, ClientID: ${finalClientId}`,
+      );
+
+      // Devolvemos la data para que OpenClaw pueda construir la factura final
+      res.json({
+        success: true,
+        clientId: finalClientId,
+        clientName: clientName,
+        items: items,
+      });
+    } catch (error: any) {
+      console.error("❌ Error procesando Excel:", error);
+      res.status(500).json({ error: "Fallo al procesar el archivo Excel" });
+    }
   },
 );
 

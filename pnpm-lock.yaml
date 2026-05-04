@@ -202,6 +202,9 @@ importers:
       pdfkit:
         specifier: ^0.17.2
         version: 0.17.2
+      xlsx:
+        specifier: ^0.18.5
+        version: 0.18.5
       zod:
         specifier: 'catalog:'
         version: 3.25.76
