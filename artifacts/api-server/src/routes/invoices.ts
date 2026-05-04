@@ -502,7 +502,7 @@ router.post("/invoices/:id/payment", async (req, res): Promise<void> => {
 });
 
 router.post(
-  "/invoices/parse-albaran",
+  "/parse-albaran", // Asegúrate de montar esto bajo el prefijo /invoices
   upload.single("file"),
   async (req, res): Promise<void> => {
     try {
@@ -510,15 +510,17 @@ router.post(
       const companyId = req.body.companyId;
 
       if (!file || !file.buffer) {
-        res.status(400).json({ error: "No se proporcionó ningún archivo" });
+        res
+          .status(400)
+          .json({ error: "No se proporcionó ningún archivo Excel" });
         return;
       }
       if (!companyId) {
-        res.status(400).json({ error: "Falta el companyId" });
+        res.status(400).json({ error: "Falta el companyId en la petición" });
         return;
       }
 
-      console.log(`🚀 Procesando Excel: ${file.originalname}`);
+      console.log(`🚀 [BACKEND] Autoguardando Excel: ${file.originalname}`);
 
       // 1. LEER EL EXCEL DESDE EL BUFFER
       const workbook = XLSX.read(file.buffer, { type: "buffer" });
@@ -539,10 +541,9 @@ router.post(
         qtyIdx = -1,
         priceIdx = -1;
 
-      // 2. PARSEO DE FILAS (Tu misma lógica del frontend)
+      // 2. EXTRAER DATOS DEL EXCEL (Misma lógica que tu frontend)
       for (const rawRow of rows as any[]) {
         if (!rawRow || !Array.isArray(rawRow) || rawRow.length === 0) continue;
-
         const cells = rawRow.map((cell) => String(cell || "").trim());
 
         // Extraer Cliente
@@ -638,43 +639,52 @@ router.post(
           const quantity = qtyIdx !== -1 ? parseFloat(cells[qtyIdx]) || 1 : 1;
           const priceWithTax =
             priceIdx !== -1 ? parseFloat(cells[priceIdx]) || 0 : 0;
-          const baseUnitPrice = priceWithTax / 1.21;
+          const baseUnitPrice = priceWithTax / 1.21; // Quitamos IVA como en tu frontend
 
           items.push({
             description,
-            quantity: quantity.toString(),
-            unitPrice: baseUnitPrice.toFixed(6),
+            quantity,
+            unitPrice: baseUnitPrice,
+            amount: quantity * baseUnitPrice,
           });
         }
       }
 
-      // 3. BUSCAR O CREAR CLIENTE EN BASE DE DATOS
-      let finalClientId = null;
+      if (items.length === 0) {
+        res
+          .status(400)
+          .json({
+            error: "No se encontraron líneas de productos en el Excel.",
+          });
+        return;
+      }
 
-      if (clientName || clientNif) {
-        // Buscar cliente existente
-        const existingClients = await db
-          .select()
-          .from(clientsTable)
-          .where(
-            and(
-              eq(clientsTable.companyId, parseInt(companyId)),
-              clientNif
-                ? eq(clientsTable.taxId, clientNif)
-                : ilike(clientsTable.name, `%${clientName}%`),
-            ),
-          )
-          .limit(1);
+      // 3. TRANSACCIÓN: GUARDAR TODO EN BASE DE DATOS
+      const result = await db.transaction(async (tx) => {
+        let finalClientId = null;
 
-        if (existingClients.length > 0) {
-          finalClientId = existingClients[0].id;
-        } else if (clientName) {
-          // Crear nuevo cliente si no existe
-          let extractedPostalCode = "";
-          let extractedCity = "";
-          let extractedAddress = clientAddress;
+        // A. Resolver Cliente (Buscar o Crear)
+        if (clientName || clientNif) {
+          const existingClients = await tx
+            .select()
+            .from(clientsTable)
+            .where(
+              and(
+                eq(clientsTable.companyId, parseInt(companyId)),
+                clientNif
+                  ? eq(clientsTable.taxId, clientNif)
+                  : ilike(clientsTable.name, `%${clientName}%`),
+              ),
+            )
+            .limit(1);
 
-          if (clientAddress) {
+          if (existingClients.length > 0) {
+            finalClientId = existingClients[0].id;
+          } else if (clientName) {
+            // Lógica de extracción de CP y Ciudad
+            let extractedPostalCode = "";
+            let extractedCity = "";
+            let extractedAddress = clientAddress;
             const cpMatch = clientAddress.match(/\b\d{5}\b/);
             if (cpMatch) {
               extractedPostalCode = cpMatch[0];
@@ -684,41 +694,71 @@ router.post(
                 extractedAddress = parts[0].replace(/[,\s]+$/, "").trim();
               }
             }
+
+            const [newClient] = await tx
+              .insert(clientsTable)
+              .values({
+                companyId: parseInt(companyId),
+                name: clientName,
+                taxId: clientNif || "PENDIENTE",
+                address: extractedAddress || "",
+                phone: clientPhone || null,
+                email: clientEmail || null,
+                contactPerson: clientContact || null,
+                city: extractedCity || "",
+                postalCode: extractedPostalCode || "",
+              })
+              .returning();
+            finalClientId = newClient.id;
           }
-
-          const [newClient] = await db
-            .insert(clientsTable)
-            .values({
-              companyId: parseInt(companyId),
-              name: clientName,
-              taxId: clientNif || "PENDIENTE",
-              address: extractedAddress || "",
-              phone: clientPhone || null,
-              email: clientEmail || null,
-              contactPerson: clientContact || null,
-              city: extractedCity || "",
-              postalCode: extractedPostalCode || "",
-            })
-            .returning();
-
-          finalClientId = newClient.id;
         }
-      }
+
+        // B. Calcular Totales de la factura
+        const subtotal = items.reduce((acc, item) => acc + item.amount, 0);
+        const taxRate = 21; // 21% fijo según tu lógica del frontend
+        const taxAmount = subtotal * (taxRate / 100);
+        const total = subtotal + taxAmount;
+
+        // C. Crear la Factura Emitida
+        const [invoice] = await tx
+          .insert(invoicesTable)
+          .values({
+            companyId: parseInt(companyId),
+            clientId: finalClientId,
+            type: "invoice",
+            status: "borrador", // Se guarda como borrador para revisión posterior
+            issueDate: new Date().toISOString().split("T")[0],
+            concept: "Facturación de albarán automático",
+            subtotal: subtotal.toString(),
+            taxRate: taxRate.toString(),
+            taxAmount: taxAmount.toString(),
+            total: total.toString(),
+          })
+          .returning();
+
+        // D. Insertar las Líneas (Items)
+        const itemsToInsert = items.map((item) => ({
+          invoiceId: invoice.id,
+          description: item.description,
+          quantity: item.quantity.toString(),
+          unitPrice: item.unitPrice.toFixed(6), // 6 decimales de precisión
+          amount: item.amount.toFixed(6),
+        }));
+
+        await tx.insert(invoiceItemsTable).values(itemsToInsert);
+
+        return { invoiceId: invoice.id, clientId: finalClientId };
+      });
 
       console.log(
-        `✅ Excel procesado. Items: ${items.length}, ClientID: ${finalClientId}`,
+        `✅ [BACKEND] Factura autogenerada con ID: ${result.invoiceId}`,
       );
-
-      // Devolvemos la data para que OpenClaw pueda construir la factura final
-      res.json({
-        success: true,
-        clientId: finalClientId,
-        clientName: clientName,
-        items: items,
-      });
+      res.status(201).json({ success: true, invoiceId: result.invoiceId });
     } catch (error: any) {
-      console.error("❌ Error procesando Excel:", error);
-      res.status(500).json({ error: "Fallo al procesar el archivo Excel" });
+      console.error("❌ Error guardando Excel en BD:", error);
+      res
+        .status(500)
+        .json({ error: "Fallo al procesar y guardar el archivo." });
     }
   },
 );
