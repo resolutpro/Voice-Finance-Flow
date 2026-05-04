@@ -27,9 +27,31 @@ const router: IRouter = Router();
 // ============================================================================
 
 const upload = multer({ storage: multer.memoryStorage() });
-const docAiClient = new DocumentProcessorServiceClient({
+
+// 🚨 INYECCIÓN SEGURA DE CREDENCIALES DESDE MEMORIA 🚨
+let docAiConfig: any = {
   apiEndpoint: "eu-documentai.googleapis.com",
-});
+};
+
+try {
+  if (process.env.GOOGLE_CREDENTIALS_JSON) {
+    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+    docAiConfig.credentials = {
+      client_email: credentials.client_email,
+      private_key: credentials.private_key,
+    };
+    docAiConfig.projectId =
+      credentials.project_id || process.env.DOCUMENT_AI_PROJECT_ID;
+  } else {
+    console.warn(
+      "⚠️ ADVERTENCIA: No se encontró la variable GOOGLE_CREDENTIALS_JSON. El cliente de Google intentará usar el entorno por defecto.",
+    );
+  }
+} catch (error) {
+  console.error("❌ ERROR crítico al parsear GOOGLE_CREDENTIALS_JSON:", error);
+}
+
+const docAiClient = new DocumentProcessorServiceClient(docAiConfig);
 
 router.post(
   "/vendor-invoices/parse",
@@ -48,9 +70,19 @@ router.post(
         return;
       }
 
-      const projectId = process.env.DOCUMENT_AI_PROJECT_ID;
+      // Si las credenciales en JSON traían el project_id, lo usamos. Si no, tiramos de .env
+      let projectId =
+        docAiConfig.projectId || process.env.DOCUMENT_AI_PROJECT_ID;
       const location = process.env.DOCUMENT_AI_LOCATION;
       const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID;
+
+      // Intentar forzar el projectId desde el JSON si falló arriba
+      if (!projectId && process.env.GOOGLE_CREDENTIALS_JSON) {
+        try {
+          const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+          projectId = creds.project_id;
+        } catch (e) {}
+      }
 
       if (!projectId || !location || !processorId) {
         res
@@ -432,7 +464,7 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
       await tx
         .delete(vendorInvoiceItemsTable)
         .where(eq(vendorInvoiceItemsTable.vendorInvoiceId, params.data.id));
-      
+
       // Luego eliminar la factura principal
       await tx
         .delete(vendorInvoicesTable)
@@ -441,7 +473,9 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
     res.json({ success: true });
   } catch (error: any) {
     console.error("❌ Error eliminando factura de proveedor:", error);
-    res.status(500).json({ error: error.message || "Error eliminando factura" });
+    res
+      .status(500)
+      .json({ error: error.message || "Error eliminando factura" });
   }
 });
 
