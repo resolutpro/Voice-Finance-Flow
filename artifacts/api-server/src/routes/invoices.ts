@@ -713,7 +713,7 @@ router.post(
 
         // B. Calcular Totales de la factura
         const subtotal = items.reduce((acc, item) => acc + item.amount, 0);
-        const taxRate = 21; // 21% fijo según tu lógica del frontend
+        const taxRate = 21; // 21% fijo
         const taxAmount = subtotal * (taxRate / 100);
         const total = subtotal + taxAmount;
 
@@ -724,13 +724,14 @@ router.post(
             companyId: parseInt(companyId),
             clientId: finalClientId,
             type: "invoice",
-            status: "borrador", // Se guarda como borrador para revisión posterior
+            status: "borrador",
             issueDate: new Date().toISOString().split("T")[0],
             concept: "Facturación de albarán automático",
-            subtotal: subtotal.toString(),
-            taxRate: taxRate.toString(),
-            taxAmount: taxAmount.toString(),
-            total: total.toString(),
+            // SOLUCIÓN: Forzamos la precisión a 2 decimales para satisfacer a Postgres
+            subtotal: subtotal.toFixed(2),
+            taxRate: taxRate.toFixed(2),
+            taxAmount: taxAmount.toFixed(2),
+            total: total.toFixed(2),
           })
           .returning();
 
