@@ -3,7 +3,7 @@ import { useListVendorInvoices, useListExpenses, useCreateVendorInvoice, useCrea
 import { useCompany } from "@/hooks/use-company";
 import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Modal, Input, Label, Select } from "@/components/shared-ui";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Plus, ShoppingBag, Receipt } from "lucide-react";
+import { Plus, ShoppingBag, Receipt, UploadCloud, Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,6 +17,106 @@ export default function PurchasesPage() {
   const { data: expenses, isLoading: loadingExpenses } = useListExpenses(activeCompanyId ? { companyId: activeCompanyId } : undefined);
 
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    if (!activeCompanyId) {
+      toast({
+        title: "Atención",
+        description: "Selecciona una empresa específica arriba.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    const pdfFiles = Array.from(files).filter(f => f.type === "application/pdf");
+
+    if (pdfFiles.length === 0) {
+      toast({
+        title: "Archivo(s) inválido(s)",
+        description: "Solo se permiten archivos PDF",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    setIsUploading(true);
+    toast({
+      title: "Procesando subida masiva",
+      description: `Se están analizando ${pdfFiles.length} facturas con IA...`,
+    });
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (let i = 0; i < pdfFiles.length; i++) {
+      const file = pdfFiles[i];
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("companyId", activeCompanyId.toString());
+
+      try {
+        const parseRes = await fetch("/api/vendor-invoices/parse", {
+          method: "POST",
+          body: formData,
+        });
+        const parseData = await parseRes.json();
+
+        if (!parseRes.ok || !parseData.success) {
+          errorCount++;
+          continue;
+        }
+
+        const pData = parseData.parsedData;
+
+        const payload = {
+          companyId: activeCompanyId,
+          supplierId: pData.supplierId,
+          invoiceNumber: pData.invoiceNumber || "S/N",
+          description: "Factura extraída por IA",
+          issueDate: pData.issueDate || new Date().toISOString().split("T")[0],
+          dueDate: pData.dueDate || null,
+          subtotal: pData.netAmount?.toString() || "0",
+          taxRate: "21",
+          status: "borrador",
+        };
+
+        const saveRes = await fetch("/api/vendor-invoices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (saveRes.ok) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      } catch (error) {
+        console.error(`Error en factura ${i + 1}:`, error);
+        errorCount++;
+      }
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["/api/vendor-invoices"] });
+
+    toast({
+      title: "Subida finalizada",
+      description: `Completadas: ${successCount} | Errores: ${errorCount}.`,
+      variant: errorCount > 0 ? "destructive" : "default",
+    });
+
+    setIsUploading(false);
+    event.target.value = "";
+  };
+
+  // Aquí recuperamos la lógica original que se había borrado accidentalmente
   const handleNewClick = () => {
     if (!activeCompanyId) {
       toast({ title: "Selecciona una empresa", description: "Debes seleccionar una empresa específica para crear registros.", variant: "destructive" });
@@ -33,9 +133,47 @@ export default function PurchasesPage() {
           <h2 className="text-3xl font-display font-bold text-foreground">Compras y Gastos</h2>
           <p className="text-muted-foreground">Gestiona facturas de proveedores y tickets</p>
         </div>
-        <Button className="gap-2 shadow-lg shadow-primary/20" onClick={handleNewClick}>
-          <Plus className="w-4 h-4" /> {activeTab === "invoices" ? "Nueva Factura Recibida" : "Nuevo Gasto"}
-        </Button>
+        <div className="flex gap-2 items-center flex-wrap">
+          {activeTab === "invoices" && (
+            <>
+              <input
+                type="file"
+                id="upload-pdf-purchases"
+                accept="application/pdf"
+                className="hidden"
+                multiple
+                onChange={handleFileUpload}
+                onClick={(e) => {
+                  (e.target as HTMLInputElement).value = "";
+                }}
+                disabled={isUploading || !activeCompanyId}
+              />
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  if (!activeCompanyId) {
+                    toast({
+                      title: "Atención",
+                      description: "Selecciona una empresa específica para subir facturas.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  document.getElementById("upload-pdf-purchases")?.click();
+                }}
+                disabled={isUploading || !activeCompanyId}
+                className="gap-2"
+              >
+                {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
+                {isUploading ? "Procesando IA..." : "Subir Factura(s) PDF"}
+              </Button>
+            </>
+          )}
+
+          <Button className="gap-2 shadow-lg shadow-primary/20" onClick={handleNewClick}>
+            <Plus className="w-4 h-4" /> {activeTab === "invoices" ? "Factura Manual" : "Nuevo Gasto"}
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-2 p-1 bg-secondary/50 rounded-xl w-fit border border-border">
