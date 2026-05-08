@@ -1,5 +1,9 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { DocumentProcessorServiceClient } from "@google-cloud/documentai";
 import { eq, desc, and, ilike } from "drizzle-orm";
 import {
   db,
@@ -29,6 +33,218 @@ import * as XLSX from "xlsx";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+const invoiceUploadRoot = path.resolve(process.cwd(), "uploads", "invoices");
+
+let docAiConfig: any = {
+  apiEndpoint: "eu-documentai.googleapis.com",
+};
+
+try {
+  if (process.env.GOOGLE_CREDENTIALS_JSON) {
+    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+    docAiConfig.credentials = {
+      client_email: credentials.client_email,
+      private_key: credentials.private_key,
+    };
+    docAiConfig.projectId =
+      credentials.project_id || process.env.DOCUMENT_AI_PROJECT_ID;
+  } else {
+    console.warn(
+      "⚠️ ADVERTENCIA: No se encontró GOOGLE_CREDENTIALS_JSON para Document AI.",
+    );
+  }
+} catch (error) {
+  console.error("❌ ERROR crítico al parsear GOOGLE_CREDENTIALS_JSON:", error);
+}
+
+const docAiClient = new DocumentProcessorServiceClient(docAiConfig);
+
+function parseMoney(value: string | null | undefined): number {
+  if (!value) return 0;
+  const cleaned = value.replace(/[^0-9,.-]+/g, "").trim();
+  if (!cleaned) return 0;
+  const normalized =
+    cleaned.includes(",") && cleaned.includes(".")
+      ? cleaned.replace(/\./g, "").replace(",", ".")
+      : cleaned.replace(",", ".");
+  return parseFloat(normalized) || 0;
+}
+
+function parseDateValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const isoMatch = value.match(/\d{4}-\d{2}-\d{2}/);
+  if (isoMatch) return isoMatch[0];
+
+  const europeanMatch = value.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+  if (europeanMatch) {
+    const [, day, month, rawYear] = europeanMatch;
+    const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime()))
+    return parsed.toISOString().split("T")[0];
+  return null;
+}
+
+function getDocAiConfig() {
+  let projectId = docAiConfig.projectId || process.env.DOCUMENT_AI_PROJECT_ID;
+  if (!projectId && process.env.GOOGLE_CREDENTIALS_JSON) {
+    try {
+      projectId = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON).project_id;
+    } catch {}
+  }
+
+  const location = process.env.DOCUMENT_AI_LOCATION;
+  const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID;
+  if (!projectId || !location || !processorId) return null;
+  return {
+    name: `projects/${projectId}/locations/${location}/processors/${processorId}`,
+  };
+}
+
+async function saveOriginalInvoicePdf(
+  companyId: number,
+  file: Express.Multer.File,
+): Promise<string> {
+  const companyDir = path.join(invoiceUploadRoot, String(companyId));
+  await mkdir(companyDir, { recursive: true });
+  const safeOriginalName = file.originalname.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  const storedName = `${Date.now()}-${randomUUID()}-${safeOriginalName}`;
+  const absolutePath = path.join(companyDir, storedName);
+  await writeFile(absolutePath, file.buffer);
+  return absolutePath;
+}
+
+function extractIssuedInvoiceData(document: any) {
+  const allExtractedFields: Record<string, any> = {};
+  const lineItems: Array<{
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    amount: number;
+  }> = [];
+  const data = {
+    clientName: "",
+    clientTaxId: "",
+    clientAddress: "",
+    invoiceNumber: "",
+    issueDate: null as string | null,
+    dueDate: null as string | null,
+    netAmount: 0,
+    taxAmount: 0,
+    totalAmount: 0,
+    lineItems,
+    allExtractedFields,
+  };
+
+  for (const entity of document.entities || []) {
+    const type = entity.type as string | undefined;
+    const textValue = entity.mentionText || entity.normalizedValue?.text || "";
+    if (!type) continue;
+
+    if (type === "line_item" && entity.properties) {
+      const line = {
+        description: textValue || "Concepto extraído",
+        quantity: 1,
+        unitPrice: 0,
+        amount: 0,
+      };
+      for (const prop of entity.properties) {
+        const pType = prop.type || "";
+        const pText = prop.mentionText || prop.normalizedValue?.text || "";
+        if (pType.includes("description"))
+          line.description = pText || line.description;
+        if (pType.includes("quantity")) line.quantity = parseMoney(pText) || 1;
+        if (pType.includes("unit_price")) line.unitPrice = parseMoney(pText);
+        if (pType.includes("amount")) line.amount = parseMoney(pText);
+      }
+      if (!line.unitPrice && line.quantity)
+        line.unitPrice = line.amount / line.quantity;
+      lineItems.push(line);
+      continue;
+    }
+
+    if (textValue) {
+      if (allExtractedFields[type]) {
+        allExtractedFields[type] = Array.isArray(allExtractedFields[type])
+          ? [...allExtractedFields[type], textValue]
+          : [allExtractedFields[type], textValue];
+      } else {
+        allExtractedFields[type] = textValue;
+      }
+    }
+
+    switch (type) {
+      case "receiver_name":
+      case "customer_name":
+        data.clientName ||= textValue;
+        break;
+      case "receiver_tax_id":
+      case "customer_tax_id":
+        data.clientTaxId ||= textValue;
+        break;
+      case "receiver_address":
+      case "customer_address":
+        data.clientAddress ||= textValue;
+        break;
+      case "invoice_id":
+        data.invoiceNumber ||= textValue;
+        break;
+      case "invoice_date":
+        data.issueDate ||= parseDateValue(
+          entity.normalizedValue?.text || textValue,
+        );
+        break;
+      case "due_date":
+        data.dueDate ||= parseDateValue(
+          entity.normalizedValue?.text || textValue,
+        );
+        break;
+      case "net_amount":
+        data.netAmount ||= parseMoney(
+          entity.normalizedValue?.text || textValue,
+        );
+        break;
+      case "total_tax_amount":
+        data.taxAmount ||= parseMoney(
+          entity.normalizedValue?.text || textValue,
+        );
+        break;
+      case "total_amount":
+        data.totalAmount ||= parseMoney(
+          entity.normalizedValue?.text || textValue,
+        );
+        break;
+    }
+  }
+
+  if (data.netAmount === 0 && lineItems.length > 0) {
+    data.netAmount = lineItems.reduce(
+      (acc, item) => acc + (item.amount || 0),
+      0,
+    );
+  }
+  if (data.totalAmount === 0)
+    data.totalAmount = data.netAmount + data.taxAmount;
+  if (data.taxAmount === 0 && data.totalAmount > data.netAmount) {
+    data.taxAmount = data.totalAmount - data.netAmount;
+  }
+
+  if (lineItems.length === 0) {
+    lineItems.push({
+      description:
+        data.allExtractedFields.description || "Factura importada desde PDF",
+      quantity: 1,
+      unitPrice: data.netAmount || data.totalAmount,
+      amount: data.netAmount || data.totalAmount,
+    });
+  }
+
+  return data;
+}
 
 interface ProcessedItem {
   description: string;
@@ -291,6 +507,171 @@ router.post("/invoices", async (req, res): Promise<void> => {
   const result = await getInvoiceWithItems(invoice.id);
   res.status(201).json(result);
 });
+
+router.post(
+  "/invoices/bulk-upload-pdfs",
+  upload.array("files"),
+  async (req, res): Promise<void> => {
+    try {
+      const companyId = Number(req.body.companyId);
+      const files = (req.files || []) as Express.Multer.File[];
+
+      if (!companyId) {
+        res.status(400).json({ error: "Falta el companyId" });
+        return;
+      }
+      if (files.length === 0) {
+        res.status(400).json({ error: "No se subió ningún PDF" });
+        return;
+      }
+
+      const config = getDocAiConfig();
+      if (!config) {
+        res
+          .status(500)
+          .json({ error: "Configuración de Document AI incompleta" });
+        return;
+      }
+
+      const createdInvoices: any[] = [];
+      const errors: Array<{ fileName: string; error: string }> = [];
+
+      for (const file of files) {
+        if (file.mimetype !== "application/pdf") {
+          errors.push({
+            fileName: file.originalname,
+            error: "Solo se permiten PDFs",
+          });
+          continue;
+        }
+
+        try {
+          const [docAiResult] = await docAiClient.processDocument({
+            name: config.name,
+            rawDocument: {
+              content: file.buffer.toString("base64"),
+              mimeType: file.mimetype,
+            },
+          });
+
+          if (!docAiResult.document) {
+            throw new Error("Document AI no devolvió datos legibles");
+          }
+
+          const extracted = extractIssuedInvoiceData(docAiResult.document);
+          const fileUrl = await saveOriginalInvoicePdf(companyId, file);
+          const issueDate =
+            extracted.issueDate || new Date().toISOString().split("T")[0];
+          const subtotal =
+            extracted.netAmount ||
+            extracted.lineItems.reduce((acc, item) => acc + item.amount, 0);
+          const taxAmount = extracted.taxAmount || 0;
+          const total = extracted.totalAmount || subtotal + taxAmount;
+          const taxRate = subtotal > 0 ? (taxAmount / subtotal) * 100 : 21;
+
+          const result = await db.transaction(async (tx) => {
+            let finalClientId: number | null = null;
+
+            if (extracted.clientName || extracted.clientTaxId) {
+              const existingClients = await tx
+                .select()
+                .from(clientsTable)
+                .where(
+                  and(
+                    eq(clientsTable.companyId, companyId),
+                    extracted.clientTaxId
+                      ? eq(clientsTable.taxId, extracted.clientTaxId)
+                      : ilike(clientsTable.name, `%${extracted.clientName}%`),
+                  ),
+                )
+                .limit(1);
+
+              if (existingClients.length > 0) {
+                finalClientId = existingClients[0].id;
+              } else if (extracted.clientName) {
+                const [newClient] = await tx
+                  .insert(clientsTable)
+                  .values({
+                    companyId,
+                    name: extracted.clientName,
+                    taxId: extracted.clientTaxId || "PENDIENTE",
+                    address: extracted.clientAddress || "",
+                    city: "",
+                    postalCode: "",
+                  })
+                  .returning();
+                finalClientId = newClient.id;
+              }
+            }
+
+            const [invoice] = await tx
+              .insert(invoicesTable)
+              .values({
+                companyId,
+                clientId: finalClientId,
+                type: "invoice",
+                invoiceNumber:
+                  extracted.invoiceNumber ||
+                  `IMPORTADA-${Date.now()}-${createdInvoices.length + 1}`,
+                status: "emitida",
+                issueDate,
+                dueDate: extracted.dueDate || issueDate,
+                concept: "Factura importada desde PDF",
+                subtotal: subtotal.toFixed(2),
+                taxRate: taxRate.toFixed(2),
+                taxAmount: taxAmount.toFixed(2),
+                total: total.toFixed(2),
+                fileUrl,
+                notes: `PDF original importado: ${file.originalname}`,
+              })
+              .returning();
+
+            const itemsToInsert = extracted.lineItems.map((item, idx) => ({
+              invoiceId: invoice.id,
+              description: item.description || "Concepto extraído del PDF",
+              quantity: (item.quantity || 1).toString(),
+              unitPrice: (item.unitPrice || item.amount || 0).toFixed(6),
+              amount: (
+                item.amount || (item.unitPrice || 0) * (item.quantity || 1)
+              ).toFixed(6),
+              sortOrder: idx,
+            }));
+
+            if (itemsToInsert.length > 0) {
+              await tx.insert(invoiceItemsTable).values(itemsToInsert);
+            }
+
+            return invoice.id;
+          });
+
+          const fullInvoice = await getInvoiceWithItems(result);
+          if (fullInvoice) createdInvoices.push(fullInvoice);
+        } catch (error: any) {
+          console.error(
+            `❌ Error importando PDF emitido ${file.originalname}:`,
+            error,
+          );
+          errors.push({
+            fileName: file.originalname,
+            error: error?.message || "No se pudo procesar el PDF",
+          });
+        }
+      }
+
+      res.status(createdInvoices.length > 0 ? 201 : 400).json({
+        success: createdInvoices.length > 0,
+        created: createdInvoices,
+        errors,
+      });
+    } catch (error: any) {
+      console.error(
+        "❌ Error general en subida masiva de facturas emitidas:",
+        error,
+      );
+      res.status(500).json({ error: "Fallo al procesar la subida masiva" });
+    }
+  },
+);
 
 router.get("/invoices/:id", async (req, res): Promise<void> => {
   const params = GetInvoiceParams.safeParse(req.params);

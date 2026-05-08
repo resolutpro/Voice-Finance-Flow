@@ -111,6 +111,7 @@ export default function InvoicesPage() {
   const [activeTab, setActiveTab] = useState("presupuestos");
   const [isUploading, setIsUploading] = useState(false);
   const fileInputAlbaranRef = useRef<HTMLInputElement>(null);
+  const fileInputIssuedPdfRef = useRef<HTMLInputElement>(null);
 
   // Modal OCR (IA)
   const [showReviewDialog, setShowReviewDialog] = useState(false);
@@ -450,6 +451,81 @@ export default function InvoicesPage() {
 
     setIsUploading(false);
     event.target.value = "";
+  };
+
+  // === SUBIDA MASIVA DE PDFs DE FACTURAS EMITIDAS ===
+  const handleIssuedPdfBulkUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    if (!companyId) {
+      toast({
+        title: "Atención",
+        description: "Selecciona una empresa específica arriba.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    const pdfFiles = Array.from(files).filter(
+      (file) => file.type === "application/pdf",
+    );
+
+    if (pdfFiles.length === 0) {
+      toast({
+        title: "Archivo(s) inválido(s)",
+        description: "Solo se permiten archivos PDF.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    setIsUploading(true);
+    toast({
+      title: "Importando facturas emitidas",
+      description: `Se están procesando ${pdfFiles.length} PDF(s) con Google Document AI.`,
+    });
+
+    try {
+      const formData = new FormData();
+      pdfFiles.forEach((file) => formData.append("files", file));
+      formData.append("companyId", companyId.toString());
+
+      const response = await fetch("/api/invoices/bulk-upload-pdfs", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+
+      if (!response.ok && !data.created?.length) {
+        throw new Error(data.error || "No se pudo importar ningún PDF");
+      }
+
+      const created = Array.isArray(data.created) ? data.created : [];
+      if (created.length > 0) {
+        setInvoices((prev) => [...created, ...prev]);
+      }
+
+      const errorCount = Array.isArray(data.errors) ? data.errors.length : 0;
+      toast({
+        title: "Importación finalizada",
+        description: `Emitidas registradas: ${created.length} | Errores: ${errorCount}. Se han guardado con estado emitida.`,
+        variant: errorCount > 0 ? "destructive" : "default",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error importando PDFs",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      event.target.value = "";
+    }
   };
 
   // === GUARDAR FACTURA OCR ===
@@ -858,6 +934,42 @@ export default function InvoicesPage() {
                 onClick={() => fileInputAlbaranRef.current?.click()}
               >
                 <Upload className="w-4 h-4 mr-2" /> Desde Albarán
+              </Button>
+              <input
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                ref={fileInputIssuedPdfRef}
+                multiple
+                onChange={handleIssuedPdfBulkUpload}
+                onClick={(e) => {
+                  (e.target as HTMLInputElement).value = "";
+                }}
+                disabled={isUploading || !companyId}
+              />
+              <Button
+                variant="outline"
+                className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                onClick={() => {
+                  if (!companyId) {
+                    toast({
+                      title: "Atención",
+                      description:
+                        "Selecciona una empresa específica para importar facturas emitidas.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  fileInputIssuedPdfRef.current?.click();
+                }}
+                disabled={isUploading || !companyId}
+              >
+                {isUploading ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <UploadCloud className="w-4 h-4 mr-2" />
+                )}
+                {isUploading ? "Procesando IA..." : "Subir PDFs emitidos"}
               </Button>
               <Button onClick={() => handleCreateNewDocument("invoice")}>
                 <Plus className="w-4 h-4 mr-2" /> Nueva Factura (Venta)

@@ -1,5 +1,7 @@
 // artifacts/api-server/src/routes/invoice-pdf.ts
 import { Router } from "express";
+import { access } from "node:fs/promises";
+import path from "node:path";
 import { db } from "../../../../lib/db/src";
 import {
   invoicesTable,
@@ -37,6 +39,24 @@ router.get("/invoice-pdf/:id", async (req, res) => {
       .limit(1);
 
     if (!invoice) return res.status(404).send("Documento no encontrado");
+
+    if (invoice.fileUrl) {
+      const absoluteFilePath = path.resolve(invoice.fileUrl);
+      try {
+        await access(absoluteFilePath);
+        const downloadName =
+          `${invoice.invoiceNumber || "factura"}.pdf`.replace(
+            /[^a-zA-Z0-9._-]+/g,
+            "_",
+          );
+        return res.download(absoluteFilePath, downloadName);
+      } catch (error) {
+        console.warn(
+          `No se pudo encontrar el PDF original de la factura ${invoice.id}; se generará la vista HTML.`,
+          error,
+        );
+      }
+    }
 
     // 2. Obtener Líneas (Items)
     const items = await db
