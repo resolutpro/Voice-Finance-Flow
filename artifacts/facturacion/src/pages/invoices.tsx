@@ -208,43 +208,43 @@ export default function InvoicesPage() {
     </Button>
   );
 
-  useEffect(() => {
-    const fetchAllInvoices = async () => {
-      setIsLoadingData(true);
-      try {
-        const urlEmitidas = companyId
-          ? `/api/invoices?companyId=${companyId}`
-          : `/api/invoices`;
-        const resEmitidas = await fetch(urlEmitidas);
-        if (resEmitidas.ok) {
-          const dataEmitidas = await resEmitidas.json();
-          setInvoices(
-            Array.isArray(dataEmitidas)
-              ? dataEmitidas
-              : dataEmitidas.data || [],
-          );
-        }
-
-        const urlRecibidas = companyId
-          ? `/api/vendor-invoices?companyId=${companyId}`
-          : `/api/vendor-invoices`;
-        const resRecibidas = await fetch(urlRecibidas);
-        if (resRecibidas.ok) {
-          const dataRecibidas = await resRecibidas.json();
-          setVendorInvoices(
-            Array.isArray(dataRecibidas)
-              ? dataRecibidas
-              : dataRecibidas.data || [],
-          );
-        }
-      } catch (error) {
-        console.error("Error cargando facturas:", error);
-      } finally {
-        setIsLoadingData(false);
+  const fetchAllInvoices = useCallback(async () => {
+    setIsLoadingData(true);
+    try {
+      const urlEmitidas = companyId
+        ? `/api/invoices?companyId=${companyId}`
+        : `/api/invoices`;
+      const resEmitidas = await fetch(urlEmitidas);
+      if (resEmitidas.ok) {
+        const dataEmitidas = await resEmitidas.json();
+        setInvoices(
+          Array.isArray(dataEmitidas) ? dataEmitidas : dataEmitidas.data || [],
+        );
       }
-    };
-    fetchAllInvoices();
+
+      const urlRecibidas = companyId
+        ? `/api/vendor-invoices?companyId=${companyId}`
+        : `/api/vendor-invoices`;
+      const resRecibidas = await fetch(urlRecibidas);
+      if (resRecibidas.ok) {
+        const dataRecibidas = await resRecibidas.json();
+        setVendorInvoices(
+          Array.isArray(dataRecibidas)
+            ? dataRecibidas
+            : dataRecibidas.data || [],
+        );
+      }
+    } catch (error) {
+      console.error("Error cargando facturas:", error);
+    } finally {
+      setIsLoadingData(false);
+    }
   }, [companyId]);
+
+  // Se ejecuta al entrar a la página
+  useEffect(() => {
+    fetchAllInvoices();
+  }, [fetchAllInvoices]);
 
   // === LÓGICA PARA CAPTURAR BORRADOR CREADO POR VOZ ===
   const loadVoiceDraft = useCallback(() => {
@@ -633,11 +633,12 @@ export default function InvoicesPage() {
   };
 
   // === LÓGICA PARA PARSEAR ALBARÁN EXCEL/CSV (FRONTEND) ===
+  // === LÓGICA PARA PARSEAR ALBARÁN EXCEL/CSV EN MASA ===
   const handleUploadAlbaran = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
     if (!companyId) {
       toast({
@@ -649,264 +650,257 @@ export default function InvoicesPage() {
       return;
     }
 
-    try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    setIsUploading(true);
+    toast({
+      title: "Procesando albaranes",
+      description: `Analizando ${files.length} archivo(s)...`,
+    });
 
-      const items: any[] = [];
-      let isItemSection = false;
+    let successCount = 0;
+    let errorCount = 0;
 
-      // Variables para todos los datos del cliente
-      let clientName = "";
-      let clientNif = "";
-      let clientAddress = "";
-      let clientPhone = "";
-      let clientEmail = "";
-      let clientContact = "";
+    // Procesamos cada archivo uno por uno
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      try {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data);
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-      let descIdx = -1,
-        qtyIdx = -1,
-        priceIdx = -1;
+        const items: any[] = [];
+        let isItemSection = false;
 
-      for (const rawRow of rows as any[]) {
-        if (!rawRow || !Array.isArray(rawRow) || rawRow.length === 0) continue;
+        let clientName = "";
+        let clientNif = "";
+        let clientAddress = "";
+        let clientPhone = "";
+        let clientEmail = "";
+        let clientContact = "";
 
-        const cells = rawRow.map((cell) => String(cell || "").trim());
+        let descIdx = -1,
+          qtyIdx = -1,
+          priceIdx = -1;
 
-        // 1. EXTRAER DATOS DEL CLIENTE
-        for (let c = 0; c < cells.length; c++) {
-          const cell = cells[c];
-          if (!cell) continue;
+        for (const rawRow of rows as any[]) {
+          if (!rawRow || !Array.isArray(rawRow) || rawRow.length === 0)
+            continue;
 
-          const lowerCell = cell.toLowerCase();
+          const cells = rawRow.map((cell) => String(cell || "").trim());
 
-          // Función inteligente: saca el valor de la propia celda (si hay ":") o de las siguientes
-          const getValue = () => {
-            if (cell.includes(":")) {
-              const parts = cell.split(":");
-              const val = parts.slice(1).join(":").trim();
-              if (val) return val;
+          // 1. EXTRAER DATOS DEL CLIENTE
+          for (let c = 0; c < cells.length; c++) {
+            const cell = cells[c];
+            if (!cell) continue;
+
+            const lowerCell = cell.toLowerCase();
+
+            const getValue = () => {
+              if (cell.includes(":")) {
+                const parts = cell.split(":");
+                const val = parts.slice(1).join(":").trim();
+                if (val) return val;
+              }
+              for (let j = c + 1; j < cells.length; j++) {
+                if (cells[j] && cells[j].trim() !== "") return cells[j].trim();
+              }
+              return "";
+            };
+
+            if (
+              (lowerCell.includes("cliente") ||
+                lowerCell.includes("razón social")) &&
+              !clientName
+            ) {
+              clientName = getValue();
+            } else if (
+              (lowerCell.includes("n.i.f") ||
+                lowerCell.includes("nif") ||
+                lowerCell.includes("cif")) &&
+              !clientNif
+            ) {
+              clientNif = getValue();
+            } else if (
+              (lowerCell.includes("dirección") ||
+                lowerCell.includes("direccion")) &&
+              !clientAddress
+            ) {
+              clientAddress = getValue();
+            } else if (
+              (lowerCell.includes("teléfono") ||
+                lowerCell.includes("telefono")) &&
+              !clientPhone
+            ) {
+              clientPhone = getValue();
+            } else if (
+              (lowerCell.includes("email") || lowerCell.includes("correo")) &&
+              !clientEmail
+            ) {
+              clientEmail = getValue();
+            } else if (
+              lowerCell.includes("persona de contacto") &&
+              !clientContact
+            ) {
+              clientContact = getValue();
             }
-            for (let i = c + 1; i < cells.length; i++) {
-              if (cells[i] && cells[i].trim() !== "") return cells[i].trim();
-            }
-            return "";
-          };
-
-          if (
-            (lowerCell.includes("cliente") ||
-              lowerCell.includes("razón social")) &&
-            !clientName
-          ) {
-            clientName = getValue();
-          } else if (
-            (lowerCell.includes("n.i.f") ||
-              lowerCell.includes("nif") ||
-              lowerCell.includes("cif")) &&
-            !clientNif
-          ) {
-            clientNif = getValue();
-          } else if (
-            (lowerCell.includes("dirección") ||
-              lowerCell.includes("direccion")) &&
-            !clientAddress
-          ) {
-            clientAddress = getValue();
-          } else if (
-            (lowerCell.includes("teléfono") ||
-              lowerCell.includes("telefono")) &&
-            !clientPhone
-          ) {
-            clientPhone = getValue();
-          } else if (
-            (lowerCell.includes("email") || lowerCell.includes("correo")) &&
-            !clientEmail
-          ) {
-            clientEmail = getValue();
-          } else if (
-            lowerCell.includes("persona de contacto") &&
-            !clientContact
-          ) {
-            clientContact = getValue();
           }
-        }
 
-        // 2. DETECTAR DÓNDE EMPIEZA LA TABLA DE PRODUCTOS
-        if (!isItemSection) {
-          const lowerCellsForHeaders = cells.map((c) => c.toLowerCase());
-          if (
-            lowerCellsForHeaders.includes("código") ||
-            lowerCellsForHeaders.includes("descripción") ||
-            lowerCellsForHeaders.includes("artículo")
-          ) {
-            isItemSection = true;
-            descIdx = lowerCellsForHeaders.findIndex(
-              (c) => c.includes("descripción") || c.includes("artículo"),
-            );
-            qtyIdx = lowerCellsForHeaders.findIndex((c) => c === "unidades");
-            if (qtyIdx === -1)
-              qtyIdx = lowerCellsForHeaders.findIndex(
-                (c) => c.includes("cant") || c.includes("cajas"),
+          // 2. DETECTAR DÓNDE EMPIEZA LA TABLA DE PRODUCTOS
+          if (!isItemSection) {
+            const lowerCellsForHeaders = cells.map((c) => c.toLowerCase());
+            if (
+              lowerCellsForHeaders.includes("código") ||
+              lowerCellsForHeaders.includes("descripción") ||
+              lowerCellsForHeaders.includes("artículo")
+            ) {
+              isItemSection = true;
+              descIdx = lowerCellsForHeaders.findIndex(
+                (c) => c.includes("descripción") || c.includes("artículo"),
               );
-            priceIdx = lowerCellsForHeaders.findIndex((c) =>
-              c.includes("precio"),
-            );
-            continue;
+              qtyIdx = lowerCellsForHeaders.findIndex(
+                (c) =>
+                  c === "unidades" || c.includes("cant") || c.includes("cajas"),
+              );
+              priceIdx = lowerCellsForHeaders.findIndex((c) =>
+                c.includes("precio"),
+              );
+              continue;
+            }
+          }
+
+          // 3. EXTRAER LAS LÍNEAS DE PRODUCTOS
+          if (isItemSection && descIdx !== -1 && cells[descIdx]) {
+            const description = cells[descIdx];
+
+            if (
+              description.toLowerCase() === "descripción" ||
+              description === "undefined" ||
+              description === "null"
+            )
+              continue;
+
+            const quantity = qtyIdx !== -1 ? parseFloat(cells[qtyIdx]) || 1 : 1;
+            const priceWithTax =
+              priceIdx !== -1 ? parseFloat(cells[priceIdx]) || 0 : 0;
+            const baseUnitPrice = priceWithTax / 1.21;
+
+            items.push({
+              description,
+              quantity: quantity.toString(),
+              unitPrice: baseUnitPrice.toFixed(6),
+            });
           }
         }
 
-        // 3. EXTRAER LAS LÍNEAS DE PRODUCTOS
-        if (isItemSection && descIdx !== -1 && cells[descIdx]) {
-          const description = cells[descIdx];
+        if (items.length > 0) {
+          let finalClientId = undefined;
 
-          if (
-            description.toLowerCase() === "descripción" ||
-            description === "undefined" ||
-            description === "null"
-          )
-            continue;
+          // 4. BUSCAR O CREAR EL CLIENTE
+          if (clientName || clientNif) {
+            const matchedClient = clients?.find(
+              (c: any) =>
+                (clientNif && c.taxId === clientNif) ||
+                (clientName &&
+                  c.name.toLowerCase() === clientName.toLowerCase()),
+            );
 
-          const quantity = qtyIdx !== -1 ? parseFloat(cells[qtyIdx]) || 1 : 1;
-          const priceWithTax =
-            priceIdx !== -1 ? parseFloat(cells[priceIdx]) || 0 : 0;
+            if (matchedClient) {
+              finalClientId = matchedClient.id;
+              clientName = matchedClient.name;
+            } else if (clientName) {
+              try {
+                let extractedPostalCode = "";
+                let extractedCity = "";
+                let extractedAddress = clientAddress;
 
-          // DESGLOSE DE IVA: Extraemos la Base Imponible dividiendo entre 1.21
-          const baseUnitPrice = priceWithTax / 1.21;
-
-          items.push({
-            description,
-            quantity: quantity.toString(),
-            // Usamos 6 decimales de precisión para evitar el baile de céntimos al recalcular el Total
-            unitPrice: baseUnitPrice.toFixed(6),
-          });
-        }
-      }
-
-      if (items.length > 0) {
-        let finalClientId = undefined;
-
-        // 4. BUSCAR O CREAR EL CLIENTE
-        if (clientName || clientNif) {
-          const matchedClient = clients?.find(
-            (c: any) =>
-              (clientNif && c.taxId === clientNif) ||
-              (clientName && c.name.toLowerCase() === clientName.toLowerCase()),
-          );
-
-          if (matchedClient) {
-            finalClientId = matchedClient.id;
-            clientName = matchedClient.name;
-          } else if (clientName) {
-            try {
-              // Preparamos el payload con todos los datos detectados, omitiendo los vacíos
-              // Magia extra: Extraer Código Postal y Ciudad de la dirección
-              let extractedPostalCode = "";
-              let extractedCity = "";
-              let extractedAddress = clientAddress;
-
-              if (clientAddress) {
-                const cpMatch = clientAddress.match(/\b\d{5}\b/); // Busca 5 números seguidos
-                if (cpMatch) {
-                  extractedPostalCode = cpMatch[0];
-                  // Asumimos que lo que hay después del CP es la ciudad
-                  const parts = clientAddress.split(extractedPostalCode);
-                  if (parts.length > 1) {
-                    // Limpiamos la ciudad (quitamos puntos, comas o espacios al inicio)
-                    extractedCity = parts[1].replace(/^[.\s,-]+/, "").trim();
-                    // Opcional: Dejar la dirección limpia sin el CP y ciudad
-                    extractedAddress = parts[0].replace(/[,\s]+$/, "").trim();
+                if (clientAddress) {
+                  const cpMatch = clientAddress.match(/\b\d{5}\b/);
+                  if (cpMatch) {
+                    extractedPostalCode = cpMatch[0];
+                    const parts = clientAddress.split(extractedPostalCode);
+                    if (parts.length > 1) {
+                      extractedCity = parts[1].replace(/^[.\s,-]+/, "").trim();
+                      extractedAddress = parts[0].replace(/[,\s]+$/, "").trim();
+                    }
                   }
                 }
-              }
 
-              // Preparamos el payload satisfaciendo a Zod (enviando strings vacíos si no hay dato)
-              const clientPayload = {
-                companyId: companyId,
-                name: clientName,
-                taxId: clientNif || "",
-                address: extractedAddress || "",
-                phone: clientPhone || undefined,
-                email: clientEmail || undefined,
-                contactPerson: clientContact || undefined,
-                // Campos requeridos por tu API:
-                city: extractedCity || "",
-                province: "", // El Excel no lo suele traer claro, lo mandamos vacío para pasar la validación
-                postalCode: extractedPostalCode || "",
-              };
+                const clientPayload = {
+                  companyId: companyId,
+                  name: clientName,
+                  taxId: clientNif || "",
+                  address: extractedAddress || "",
+                  phone: clientPhone || undefined,
+                  email: clientEmail || undefined,
+                  contactPerson: clientContact || undefined,
+                  city: extractedCity || "",
+                  province: "",
+                  postalCode: extractedPostalCode || "",
+                };
 
-              console.log(
-                "➡️ FRONTEND: Payload a enviar a la API:",
-                clientPayload,
-              );
-
-              // LOG 1: Vemos qué ha extraído exactamente el Excel y qué vamos a enviar
-              console.log(
-                "➡️ FRONTEND: Payload a enviar a la API:",
-                clientPayload,
-              );
-
-              const res = await fetch("/api/clients", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(clientPayload),
-              });
-
-              if (res.ok) {
-                const newClient = await res.json();
-                finalClientId =
-                  newClient?.data?.id ||
-                  newClient?.id ||
-                  (Array.isArray(newClient) ? newClient[0]?.id : undefined);
-                toast({
-                  title: "Cliente Creado",
-                  description: `Se ha registrado a ${clientName} con todos sus datos.`,
+                const res = await fetch("/api/clients", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(clientPayload),
                 });
+
+                if (res.ok) {
+                  const newClient = await res.json();
+                  finalClientId =
+                    newClient?.data?.id ||
+                    newClient?.id ||
+                    (Array.isArray(newClient) ? newClient[0]?.id : undefined);
+                }
+              } catch (e) {
+                console.error("Error creando cliente:", e);
               }
-            } catch (e) {
-              console.error("Error creando cliente:", e);
             }
           }
+
+          // 5. GUARDAR LA FACTURA COMO BORRADOR DIRECTAMENTE EN LA BD
+          const invoicePayload = {
+            companyId: companyId,
+            clientId: finalClientId,
+            clientName: clientName || "Cliente Desconocido",
+            type: "invoice",
+            status: "borrador",
+            issueDate: new Date().toISOString().split("T")[0],
+            concept: `Albarán importado: ${file.name}`,
+            items: items,
+            taxRate: "21",
+          };
+
+          const invoiceRes = await fetch("/api/invoices", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(invoicePayload),
+          });
+
+          if (invoiceRes.ok) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } else {
+          errorCount++; // No se encontraron items
         }
-
-        // 5. ABRIR EL MODAL DE FACTURA
-        setEditingInvoice({
-          isNew: true,
-          type: "invoice",
-          status: "borrador",
-          invoiceNumber: "",
-          clientId: finalClientId,
-          clientName: clientName || "",
-          issueDate: new Date().toISOString().split("T")[0],
-          concept: "Facturación de albarán",
-          taxRate: 21, // <--- Cambiado de nuevo al 21%
-          items: items,
-        });
-
-        toast({
-          title: "Albarán procesado",
-          description: `Se precargaron ${items.length} productos con 0% de IVA.`,
-        });
-      } else {
-        toast({
-          title: "Sin datos",
-          description: "No se encontraron productos en el archivo.",
-          variant: "destructive",
-        });
+      } catch (error) {
+        console.error(`Error parseando archivo ${file.name}:`, error);
+        errorCount++;
       }
-    } catch (error) {
-      console.error("Error parseando archivo:", error);
-      toast({
-        title: "Error",
-        description: "El archivo no se pudo leer correctamente.",
-        variant: "destructive",
-      });
-    } finally {
-      if (event.target) event.target.value = "";
     }
-  };
 
+    // 6. NOTIFICAR RESULTADOS Y RECARGAR LA TABLA SUAVEMENTE
+    toast({
+      title: "Importación masiva finalizada",
+      description: `Éxito: ${successCount} albaranes | Errores: ${errorCount}`,
+      variant: errorCount > 0 && successCount === 0 ? "destructive" : "default",
+    });
+
+    fetchAllInvoices(); // Recarga suave de la tabla
+    setIsUploading(false);
+    if (event.target) event.target.value = "";
+  };
   return (
     <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto">
       {/* HEADER CON BOTONES ALINEADOS A LA DERECHA */}
@@ -926,6 +920,7 @@ export default function InvoicesPage() {
                 accept=".csv, .xls, .xlsx, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="hidden"
                 ref={fileInputAlbaranRef}
+                multiple
                 onChange={handleUploadAlbaran}
               />
               <Button
@@ -1638,7 +1633,7 @@ export default function InvoicesPage() {
                           );
                           toast({ title: "Factura eliminada" });
                           setSelectedVendorInvoice(null);
-                          loadVendorInvoices();
+                          fetchAllInvoices(); // <-- CAMBIA EL loadVendorInvoices() POR ESTO
                         } catch (e) {
                           toast({
                             title: "Error al borrar",
@@ -1792,9 +1787,6 @@ export default function InvoicesPage() {
                         Estado
                       </Label>
                       <select
-                        disabled={
-                          isReadonly && editingInvoice.type === "invoice"
-                        }
                         className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm mt-1 disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
                         value={
                           editingInvoice.type === "invoice"
@@ -2140,7 +2132,8 @@ export default function InvoicesPage() {
                             method: "DELETE",
                           });
                           toast({ title: "Documento eliminado" });
-                          window.location.reload();
+                          setEditingInvoice(null); // <-- AÑADE ESTO
+                          fetchAllInvoices(); // <-- CAMBIA EL window.location.reload() POR ESTO
                         } catch (e) {
                           toast({
                             title: "Error al borrar",
@@ -2174,90 +2167,80 @@ export default function InvoicesPage() {
                 Cerrar
               </Button>
 
-              {!(
-                editingInvoice?.type === "invoice" &&
-                (invoices.find((inv) => inv.id === editingInvoice?.id)
-                  ?.status || editingInvoice?.status) !== "borrador" &&
-                !editingInvoice?.isNew
-              ) && (
-                <Button
-                  onClick={async () => {
-                    try {
-                      const cleanItems = (editingInvoice.items || []).map(
-                        (item: any) => ({
-                          description: item.description || "",
-                          quantity: String(item.quantity || "1"),
-                          unitPrice: String(item.unitPrice || "0"),
-                        }),
-                      );
+              <Button
+                onClick={async () => {
+                  try {
+                    const cleanItems = (editingInvoice.items || []).map(
+                      (item: any) => ({
+                        description: item.description || "",
+                        quantity: String(item.quantity || "1"),
+                        unitPrice: String(item.unitPrice || "0"),
+                      }),
+                    );
 
-                      // Sanear estado por si el cliente aceptó el dropdown
-                      const safeStatus =
-                        editingInvoice.status === "convert_to_invoice"
-                          ? "borrador"
-                          : editingInvoice.status;
-                      const safeType =
-                        editingInvoice.status === "convert_to_invoice"
-                          ? "invoice"
-                          : editingInvoice.type;
+                    // Sanear estado por si el cliente aceptó el dropdown
+                    const safeStatus =
+                      editingInvoice.status === "convert_to_invoice"
+                        ? "borrador"
+                        : editingInvoice.status;
+                    const safeType =
+                      editingInvoice.status === "convert_to_invoice"
+                        ? "invoice"
+                        : editingInvoice.type;
 
-                      const payload = {
-                        companyId: editingInvoice.isNew
-                          ? companyId
-                          : editingInvoice.companyId,
-                        clientId: editingInvoice.clientId,
-                        projectId: editingInvoice.projectId,
-                        type: safeType,
-                        clientName: editingInvoice.clientName, // Añadido para que se guarde si lo escribes a mano
-                        invoiceNumber: editingInvoice.invoiceNumber,
-                        status: safeStatus,
-                        issueDate: editingInvoice.issueDate,
-                        dueDate: editingInvoice.dueDate,
-                        concept: editingInvoice.concept,
-                        items: cleanItems,
-                        taxRate: String(editingInvoice.taxRate ?? 21),
-                      };
+                    const payload = {
+                      companyId: editingInvoice.isNew
+                        ? companyId
+                        : editingInvoice.companyId,
+                      clientId: editingInvoice.clientId,
+                      projectId: editingInvoice.projectId,
+                      type: safeType,
+                      clientName: editingInvoice.clientName, // Añadido para que se guarde si lo escribes a mano
+                      invoiceNumber: editingInvoice.invoiceNumber,
+                      status: safeStatus,
+                      issueDate: editingInvoice.issueDate,
+                      dueDate: editingInvoice.dueDate,
+                      concept: editingInvoice.concept,
+                      items: cleanItems,
+                      taxRate: String(editingInvoice.taxRate ?? 21),
+                    };
 
-                      const url = editingInvoice.isNew
-                        ? "/api/invoices"
-                        : `/api/invoices/${editingInvoice.id}`;
-                      const method = editingInvoice.isNew ? "POST" : "PATCH";
+                    const url = editingInvoice.isNew
+                      ? "/api/invoices"
+                      : `/api/invoices/${editingInvoice.id}`;
+                    const method = editingInvoice.isNew ? "POST" : "PATCH";
 
-                      const res = await fetch(url, {
-                        method: method,
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload),
-                      });
+                    const res = await fetch(url, {
+                      method: method,
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(payload),
+                    });
 
-                      if (res.ok) {
-                        toast({
-                          title: "Guardado exitoso",
-                          description:
-                            "Los cambios se aplicaron correctamente.",
-                        });
-                        setEditingInvoice(null);
-                        window.location.reload();
-                      } else {
-                        const errorData = await res.json();
-                        toast({
-                          title: "Error al guardar",
-                          description: errorData.error || "Revisa los datos.",
-                          variant: "destructive",
-                        });
-                      }
-                    } catch (e) {
+                    if (res.ok) {
                       toast({
-                        title: "Error al conectar",
+                        title: "Guardado exitoso",
+                        description: "Los cambios se aplicaron correctamente.",
+                      });
+                      setEditingInvoice(null); // Cierra el modal
+                      fetchAllInvoices(); // RECARGA SUAVE DE LA TABLA
+                    } else {
+                      const errorData = await res.json();
+                      toast({
+                        title: "Error al guardar",
+                        description: errorData.error || "Revisa los datos.",
                         variant: "destructive",
                       });
                     }
-                  }}
-                >
-                  {editingInvoice?.isNew
-                    ? "Crear Documento"
-                    : "Guardar Cambios"}
-                </Button>
-              )}
+                  } catch (e) {
+                    toast({
+                      title: "Error al conectar",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
+                {editingInvoice?.isNew ? "Crear Documento" : "Guardar Cambios"}
+              </Button>
             </div>
           </DialogFooter>
         </DialogContent>

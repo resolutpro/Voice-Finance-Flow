@@ -596,9 +596,9 @@ router.post(
                     name: extracted.clientName,
                     taxId: extracted.clientTaxId || "PENDIENTE",
                     address: extracted.clientAddress || "",
-                city: extracted.clientCity || "",
-                province: extracted.clientProvince || "",
-                postalCode: extracted.clientPostalCode || "",
+                    city: "",
+                    province: "",
+                    postalCode: "",
                   })
                   .returning();
                 finalClientId = newClient.id;
