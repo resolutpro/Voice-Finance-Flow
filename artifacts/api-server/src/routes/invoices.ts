@@ -596,8 +596,9 @@ router.post(
                     name: extracted.clientName,
                     taxId: extracted.clientTaxId || "PENDIENTE",
                     address: extracted.clientAddress || "",
-                    city: "",
-                    postalCode: "",
+                city: extracted.clientCity || "",
+                province: extracted.clientProvince || "",
+                postalCode: extracted.clientPostalCode || "",
                   })
                   .returning();
                 finalClientId = newClient.id;
@@ -1085,6 +1086,7 @@ router.post(
                 email: clientEmail || null,
                 contactPerson: clientContact || null,
                 city: extractedCity || "",
+                province: "",
                 postalCode: extractedPostalCode || "",
               })
               .returning();
