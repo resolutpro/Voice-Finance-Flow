@@ -302,12 +302,12 @@ export default function InvoicesPage() {
       window.removeEventListener("voice_draft_ready", loadVoiceDraft);
   }, [loadVoiceDraft]);
 
-  // === LÓGICA DE SUBIDA DE PDF ===
+  // === LÓGICA DE SUBIDA DE PDF (INDIVIDUAL O EN MASA) ===
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
     if (!companyId) {
       toast({
@@ -319,10 +319,15 @@ export default function InvoicesPage() {
       return;
     }
 
-    if (file.type !== "application/pdf") {
+    // Filtrar para asegurarnos de procesar solo PDFs
+    const pdfFiles = Array.from(files).filter(
+      (f) => f.type === "application/pdf",
+    );
+
+    if (pdfFiles.length === 0) {
       toast({
-        title: "Archivo inválido",
-        description: "Solo PDF",
+        title: "Archivo(s) inválido(s)",
+        description: "Solo se permiten archivos PDF",
         variant: "destructive",
       });
       event.target.value = "";
@@ -330,39 +335,121 @@ export default function InvoicesPage() {
     }
 
     setIsUploading(true);
-    const formData = new FormData();
 
-    formData.append("file", file);
-    formData.append("companyId", companyId.toString());
+    // CASO A: SUBIDA INDIVIDUAL (Mantener comportamiento original con modal de revisión)
+    if (pdfFiles.length === 1) {
+      const formData = new FormData();
+      formData.append("file", pdfFiles[0]);
+      formData.append("companyId", companyId.toString());
 
-    try {
-      const response = await fetch("/api/vendor-invoices/parse", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        setParsedData(data.parsedData);
-        setShowReviewDialog(true);
-        toast({
-          title: "Factura analizada",
-          description: "Revisa los datos extraídos por la IA.",
+      try {
+        const response = await fetch("/api/vendor-invoices/parse", {
+          method: "POST",
+          body: formData,
         });
-      } else {
-        throw new Error(data.error || "Error al procesar el PDF");
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          setParsedData(data.parsedData);
+          setShowReviewDialog(true);
+          toast({
+            title: "Factura analizada",
+            description: "Revisa los datos extraídos por la IA.",
+          });
+        } else {
+          throw new Error(data.error || "Error al procesar el PDF");
+        }
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error.message,
+          variant: "destructive",
+        });
+      } finally {
+        setIsUploading(false);
+        event.target.value = "";
       }
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsUploading(false);
-      event.target.value = "";
+      return;
     }
+
+    // CASO B: SUBIDA EN MASA (Procesamiento y guardado automático como borrador)
+    toast({
+      title: "Procesando subida masiva",
+      description: `Se están analizando ${pdfFiles.length} facturas con IA. Esto puede tardar unos momentos...`,
+    });
+
+    let successCount = 0;
+    let errorCount = 0;
+    const newInvoicesList: any[] = [];
+
+    for (let i = 0; i < pdfFiles.length; i++) {
+      const file = pdfFiles[i];
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("companyId", companyId.toString());
+
+      try {
+        // 1. Mandar a la IA
+        const parseRes = await fetch("/api/vendor-invoices/parse", {
+          method: "POST",
+          body: formData,
+        });
+        const parseData = await parseRes.json();
+
+        if (!parseRes.ok || !parseData.success) {
+          errorCount++;
+          continue;
+        }
+
+        const pData = parseData.parsedData;
+
+        // 2. Guardar automáticamente como "Borrador"
+        const payload = {
+          companyId: companyId,
+          supplierId: pData.supplierId,
+          invoiceNumber: pData.invoiceNumber || "S/N",
+          issueDate: pData.issueDate || new Date().toISOString().split("T")[0],
+          dueDate: pData.dueDate || null,
+          subtotal: pData.netAmount?.toString() || "0",
+          taxAmount: pData.taxAmount?.toString() || "0",
+          total: pData.totalAmount?.toString() || "0",
+          extractedData: pData.allExtractedFields,
+          lineItems: pData.lineItems,
+          status: "borrador", // Importante: Se guarda como borrador para forzar revisión visual en la tabla
+        };
+
+        const saveRes = await fetch("/api/vendor-invoices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (saveRes.ok) {
+          const newInvoice = await saveRes.json();
+          newInvoicesList.push(newInvoice);
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      } catch (error) {
+        console.error(`Error en factura ${i + 1}:`, error);
+        errorCount++;
+      }
+    }
+
+    // Actualizar tabla con todas las nuevas facturas de golpe
+    if (newInvoicesList.length > 0) {
+      setVendorInvoices((prev) => [...newInvoicesList, ...prev]);
+    }
+
+    toast({
+      title: "Subida en masa finalizada",
+      description: `Completadas: ${successCount} | Errores: ${errorCount}. Recuerda revisar los borradores.`,
+      variant: errorCount > 0 ? "destructive" : "default",
+    });
+
+    setIsUploading(false);
+    event.target.value = "";
   };
 
   // === GUARDAR FACTURA OCR ===
@@ -787,11 +874,13 @@ export default function InvoicesPage() {
           {activeTab === "recibidas" && (
             <>
               {/* Input oculto para subir PDF */}
+              {/* Input oculto para subir PDF */}
               <input
                 type="file"
                 id="upload-pdf-input"
                 accept="application/pdf"
                 className="hidden"
+                multiple // <--- 1. AÑADE ESTO AQUÍ
                 onChange={handleFileUpload}
                 onClick={(e) => {
                   (e.target as HTMLInputElement).value = "";
@@ -819,7 +908,8 @@ export default function InvoicesPage() {
                 ) : (
                   <UploadCloud className="w-4 h-4 mr-2" />
                 )}
-                {isUploading ? "Procesando IA..." : "Subir Factura (PDF)"}
+                {/* 2. CAMBIA EL TEXTO PARA QUE INDIQUE QUE PUEDEN SER VARIAS */}
+                {isUploading ? "Procesando IA..." : "Subir Factura(s) PDF"}
               </Button>
             </>
           )}
