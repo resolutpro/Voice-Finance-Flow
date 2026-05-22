@@ -53,6 +53,17 @@ try {
 
 const docAiClient = new DocumentProcessorServiceClient(docAiConfig);
 
+// Función helper para limpiar números en formato español/europeo
+const parseSpanishNumber = (text: string): number => {
+  const cleaned = text.replace(/[^0-9.,-]+/g, "");
+  // Si contiene puntos (miles) y comas (decimales), elimina los puntos primero
+  if (cleaned.includes(",") && cleaned.includes(".")) {
+    return parseFloat(cleaned.replace(/\./g, "").replace(",", ".")) || 0;
+  }
+  // Si solo tiene coma, la cambia por punto
+  return parseFloat(cleaned.replace(",", ".")) || 0;
+};
+
 router.post(
   "/vendor-invoices/parse",
   upload.single("file"),
@@ -70,13 +81,11 @@ router.post(
         return;
       }
 
-      // Si las credenciales en JSON traían el project_id, lo usamos. Si no, tiramos de .env
       let projectId =
         docAiConfig.projectId || process.env.DOCUMENT_AI_PROJECT_ID;
       const location = process.env.DOCUMENT_AI_LOCATION;
       const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID;
 
-      // Intentar forzar el projectId desde el JSON si falló arriba
       if (!projectId && process.env.GOOGLE_CREDENTIALS_JSON) {
         try {
           const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
@@ -121,12 +130,13 @@ router.post(
         allExtractedFields: {} as Record<string, any>,
       };
 
-      document.entities.forEach((entity) => {
+      // ✅ SE CORRIGE ESTRUCTURALMENTE: for...of en lugar de forEach para evitar romper el flujo asíncrono
+      for (const entity of document.entities) {
         const type = entity.type;
         const textValue =
           entity.mentionText || entity.normalizedValue?.text || "";
 
-        if (!type) return;
+        if (!type) continue;
 
         if (type === "line_item" && entity.properties) {
           let line = {
@@ -140,23 +150,17 @@ router.post(
             const pText = prop.mentionText || prop.normalizedValue?.text || "";
             if (pType.includes("description")) line.description = pText;
             if (pType.includes("quantity"))
-              line.quantity =
-                parseFloat(pText.replace(/[^0-9.,]+/g, "").replace(",", ".")) ||
-                1;
+              line.quantity = parseSpanishNumber(pText) || 1;
             if (pType.includes("unit_price"))
-              line.unitPrice =
-                parseFloat(pText.replace(/[^0-9.,]+/g, "").replace(",", ".")) ||
-                0;
+              line.unitPrice = parseSpanishNumber(pText) || 0;
             if (pType.includes("amount"))
-              line.amount =
-                parseFloat(pText.replace(/[^0-9.,]+/g, "").replace(",", ".")) ||
-                0;
+              line.amount = parseSpanishNumber(pText) || 0;
           });
           extractedData.lineItems.push(line);
-          return;
+          continue;
         }
 
-        if (!textValue) return;
+        if (!textValue) continue;
 
         if (extractedData.allExtractedFields[type]) {
           if (Array.isArray(extractedData.allExtractedFields[type]))
@@ -190,23 +194,35 @@ router.post(
               ? `${entity.normalizedValue.dateValue.year}-${String(entity.normalizedValue.dateValue.month).padStart(2, "0")}-${String(entity.normalizedValue.dateValue.day).padStart(2, "0")}`
               : textValue;
             break;
-          case "net_amount":
-            extractedData.netAmount = parseFloat(
-              textValue.replace(/[^0-9.,-]+/g, "").replace(",", "."),
-            );
+          case "net_amount": {
+            const cleaned = textValue.replace(/[^0-9.,-]+/g, "");
+            const cleanNumber =
+              cleaned.includes(",") && cleaned.includes(".")
+                ? cleaned.replace(/\./g, "").replace(",", ".")
+                : cleaned.replace(",", ".");
+            extractedData.netAmount = parseFloat(cleanNumber) || 0;
             break;
-          case "total_tax_amount":
-            extractedData.taxAmount = parseFloat(
-              textValue.replace(/[^0-9.,-]+/g, "").replace(",", "."),
-            );
+          }
+          case "total_tax_amount": {
+            const cleaned = textValue.replace(/[^0-9.,-]+/g, "");
+            const cleanNumber =
+              cleaned.includes(",") && cleaned.includes(".")
+                ? cleaned.replace(/\./g, "").replace(",", ".")
+                : cleaned.replace(",", ".");
+            extractedData.taxAmount = parseFloat(cleanNumber) || 0;
             break;
-          case "total_amount":
-            extractedData.totalAmount = parseFloat(
-              textValue.replace(/[^0-9.,-]+/g, "").replace(",", "."),
-            );
+          }
+          case "total_amount": {
+            const cleaned = textValue.replace(/[^0-9.,-]+/g, "");
+            const cleanNumber =
+              cleaned.includes(",") && cleaned.includes(".")
+                ? cleaned.replace(/\./g, "").replace(",", ".")
+                : cleaned.replace(",", ".");
+            extractedData.totalAmount = parseFloat(cleanNumber) || 0;
             break;
+          }
         }
-      });
+      }
 
       let supplierId = null;
       if (extractedData.supplierName) {
@@ -290,9 +306,6 @@ router.post(
       let invoiceNumber = `AUTO-${Date.now()}`;
       let issueDate = new Date().toISOString().split("T")[0];
 
-      // ==========================================
-      // RAMA A: ES UN PDF (Usamos Google Document AI)
-      // ==========================================
       if (isPDF) {
         let projectId =
           docAiConfig.projectId || process.env.DOCUMENT_AI_PROJECT_ID;
@@ -315,7 +328,8 @@ router.post(
           return;
         }
 
-        result.document.entities.forEach((entity) => {
+        // ✅ SE CORRIGE ESTRUCTURALMENTE: for...of en lugar de forEach también en el endpoint auto
+        for (const entity of result.document.entities) {
           const type = entity.type;
           const textValue =
             entity.mentionText || entity.normalizedValue?.text || "";
@@ -342,31 +356,20 @@ router.post(
                 prop.mentionText || prop.normalizedValue?.text || "";
               if (pType.includes("description")) line.description = pText;
               if (pType.includes("quantity"))
-                line.quantity =
-                  parseFloat(
-                    pText.replace(/[^0-9.,]+/g, "").replace(",", "."),
-                  ) || 1;
+                line.quantity = parseSpanishNumber(pText) || 1;
               if (pType.includes("unit_price"))
-                line.unitPrice =
-                  parseFloat(
-                    pText.replace(/[^0-9.,]+/g, "").replace(",", "."),
-                  ) || 0;
+                line.unitPrice = parseSpanishNumber(pText) || 0;
               if (pType.includes("amount"))
-                line.amount =
-                  parseFloat(
-                    pText.replace(/[^0-9.,]+/g, "").replace(",", "."),
-                  ) || 0;
+                line.amount = parseSpanishNumber(pText) || 0;
             });
             items.push(line);
           }
-        });
-
-        // ==========================================
-        // RAMA B: ES UN EXCEL (Usamos XLSX)
-        // ==========================================
+        }
       } else {
+        // @ts-ignore
         const workbook = XLSX.read(file.buffer, { type: "buffer" });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        // @ts-ignore
         const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
         let isItemSection = false;
@@ -452,9 +455,7 @@ router.post(
         }
       }
 
-      // Validamos que haya líneas en cualquier caso
       if (items.length === 0) {
-        // Fallback: si no hay líneas, metemos un genérico para no romper la BD
         items.push({
           description: "Concepto general extraído",
           quantity: 1,
@@ -463,9 +464,6 @@ router.post(
         });
       }
 
-      // ==========================================
-      // CONVERGENCIA: TRANSACCIÓN DE BASE DE DATOS
-      // ==========================================
       const result = await db.transaction(async (tx) => {
         let finalSupplierId = null;
 
@@ -559,7 +557,6 @@ router.post(
 // 2. RUTAS CRUD (GUARDAR Y RECUPERAR TODO)
 // ============================================================================
 
-// GET - AHORA RECUPERA LAS LÍNEAS Y LOS DATOS EXTRAÍDOS
 router.get("/vendor-invoices", async (req, res): Promise<void> => {
   const query = ListVendorInvoicesQueryParams.safeParse(req.query);
   if (!query.success) {
@@ -590,7 +587,6 @@ router.get("/vendor-invoices", async (req, res): Promise<void> => {
         supplierName = supplier?.name ?? null;
       }
 
-      // Recuperamos las líneas de la factura
       const lineItems = await db
         .select()
         .from(vendorInvoiceItemsTable)
@@ -603,19 +599,12 @@ router.get("/vendor-invoices", async (req, res): Promise<void> => {
   res.json(result);
 });
 
-// POST - AHORA ASEGURAMOS QUE SE GUARDAN LAS LÍNEAS Y LA BOLSA MÁGICA
 router.post("/vendor-invoices", async (req, res): Promise<void> => {
   console.log("\n=======================================================");
   console.log("💾 [BACKEND] Petición POST para GUARDAR factura");
 
   try {
     const { extractedData, lineItems, ...bodyData } = req.body;
-    console.log(
-      "📦 Bolsa de datos a guardar (extractedData):",
-      extractedData ? "✅ Detectada" : "❌ Vacía",
-    );
-    console.log(`📋 Líneas a guardar: ${lineItems?.length || 0}`);
-
     const parsed = CreateVendorInvoiceBody.safeParse(bodyData);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.message });
@@ -624,7 +613,6 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
     const data = parsed.data;
 
     await db.transaction(async (tx) => {
-      // 1. Guardar factura y bolsa mágica
       const [invoice] = await tx
         .insert(vendorInvoicesTable)
         .values({
@@ -641,13 +629,10 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
           taxRate: data.taxRate || "21",
           taxAmount: req.body.taxAmount?.toString() || "0",
           total: req.body.total?.toString() || "0",
-          extractedData: extractedData ? extractedData : null, // Aquí se inyecta la bolsa
+          extractedData: extractedData ? extractedData : null,
         })
         .returning();
 
-      console.log("✅ [BACKEND] Factura principal guardada. ID:", invoice.id);
-
-      // 2. Guardar las líneas de concepto
       if (lineItems && Array.isArray(lineItems) && lineItems.length > 0) {
         const itemsToInsert = lineItems.map((item: any) => ({
           vendorInvoiceId: invoice.id,
@@ -657,7 +642,6 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
           amount: item.amount?.toString() || "0",
         }));
         await tx.insert(vendorInvoiceItemsTable).values(itemsToInsert);
-        console.log("✅ [BACKEND] Líneas de concepto guardadas.");
       }
 
       let supplierName = null;
@@ -669,7 +653,6 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
         if (sup) supplierName = sup.name;
       }
 
-      // Recuperamos los items insertados para devolverlos en la respuesta
       const savedLineItems = await tx
         .select()
         .from(vendorInvoiceItemsTable)
@@ -682,14 +665,11 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
         lineItems: savedLineItems,
       });
     });
-    console.log("=======================================================\n");
   } catch (error: any) {
-    console.error("❌ [BACKEND] Error al guardar factura:", error);
     res.status(500).json({ error: error.message || "Error guardando factura" });
   }
 });
 
-// PATCH y POST /payment (Los dejamos como los tenías)
 router.patch("/vendor-invoices/:id", async (req, res): Promise<void> => {
   const params = UpdateVendorInvoiceParams.safeParse(req.params);
   if (!params.success) {
@@ -697,10 +677,7 @@ router.patch("/vendor-invoices/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // 1. TRAMPA LEGAL: Extraemos el estado en español ANTES de que Zod lo valide y lo bloquee
   const { status, ...restBody } = req.body;
-
-  // 2. Validamos el resto de los campos normalmente
   const body = UpdateVendorInvoiceBody.safeParse(restBody);
   if (!body.success && Object.keys(restBody).length > 0) {
     res.status(400).json({ error: body.error.message });
@@ -710,7 +687,6 @@ router.patch("/vendor-invoices/:id", async (req, res): Promise<void> => {
   const data = body.success ? body.data : {};
   const updateData: Record<string, any> = { ...data };
 
-  // 3. Reinyectamos el estado en español directo para la Base de Datos
   if (status) {
     updateData.status = status;
   }
@@ -737,7 +713,6 @@ router.patch("/vendor-invoices/:id", async (req, res): Promise<void> => {
 
     res.json({ ...invoice, supplierName: null, categoryName: null });
   } catch (dbError: any) {
-    console.error("❌ Error actualizando factura:", dbError);
     res
       .status(500)
       .json({ error: "Error interno al actualizar la base de datos." });
@@ -748,7 +723,6 @@ router.post("/vendor-invoices/:id/payment", async (req, res): Promise<void> => {
   // ... tu código de payment intacto ...
 });
 
-// DELETE - Eliminar factura de proveedor y sus líneas
 router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
   const params = UpdateVendorInvoiceParams.safeParse(req.params);
   if (!params.success) {
@@ -758,19 +732,16 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
 
   try {
     await db.transaction(async (tx) => {
-      // Primero eliminar las líneas de la factura
       await tx
         .delete(vendorInvoiceItemsTable)
         .where(eq(vendorInvoiceItemsTable.vendorInvoiceId, params.data.id));
 
-      // Luego eliminar la factura principal
       await tx
         .delete(vendorInvoicesTable)
         .where(eq(vendorInvoicesTable.id, params.data.id));
     });
     res.json({ success: true });
   } catch (error: any) {
-    console.error("❌ Error eliminando factura de proveedor:", error);
     res
       .status(500)
       .json({ error: error.message || "Error eliminando factura" });
