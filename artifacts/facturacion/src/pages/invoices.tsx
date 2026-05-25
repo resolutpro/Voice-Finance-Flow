@@ -75,6 +75,117 @@ const AI_FIELD_LABELS: Record<string, string> = {
 const translateLabel = (key: string) =>
   AI_FIELD_LABELS[key] || key.replace(/_/g, " ").toUpperCase();
 
+const toDisplayNumber = (value: any, fallback = 0): number => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value === null || value === undefined || value === "") return fallback;
+
+  const raw = String(value).trim().replace(/\s/g, "").replace(/€/g, "");
+  if (!raw) return fallback;
+
+  let normalized = raw.replace(/[^\d,.-]/g, "");
+  const hasComma = normalized.includes(",");
+  const hasDot = normalized.includes(".");
+
+  if (hasComma && hasDot) {
+    const lastComma = normalized.lastIndexOf(",");
+    const lastDot = normalized.lastIndexOf(".");
+    normalized =
+      lastComma > lastDot
+        ? normalized.replace(/\./g, "").replace(",", ".")
+        : normalized.replace(/,/g, "");
+  } else if (hasComma) {
+    normalized = normalized.replace(",", ".");
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const normalizeInvoiceItems = (invoice: any) => {
+  const rawItems =
+    invoice?.items ||
+    invoice?.lineItems ||
+    invoice?.invoiceItems ||
+    invoice?.details ||
+    [];
+
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems.map((item: any, idx: number) => {
+    const quantity = toDisplayNumber(item.quantity, 1) || 1;
+    const amount = toDisplayNumber(item.amount, 0);
+    const unitPrice =
+      toDisplayNumber(item.unitPrice, 0) ||
+      toDisplayNumber(item.price, 0) ||
+      (amount && quantity ? amount / quantity : 0);
+
+    return {
+      ...item,
+      description:
+        item.description || item.productName || item.name || `Línea ${idx + 1}`,
+      quantity: String(quantity),
+      unitPrice: String(unitPrice),
+      amount: String(amount || quantity * unitPrice),
+      sortOrder: item.sortOrder ?? idx,
+    };
+  });
+};
+
+const normalizeInvoiceForEditing = (invoice: any) => {
+  const items = normalizeInvoiceItems(invoice);
+  const subtotalFromItems = items.reduce(
+    (acc: number, item: any) =>
+      acc +
+      toDisplayNumber(item.quantity, 1) * toDisplayNumber(item.unitPrice, 0),
+    0,
+  );
+
+  const subtotal = toDisplayNumber(invoice?.subtotal, subtotalFromItems);
+  const taxAmount = toDisplayNumber(invoice?.taxAmount, 0);
+  const total = toDisplayNumber(invoice?.total, subtotal + taxAmount);
+
+  let taxRate = toDisplayNumber(invoice?.taxRate, 0);
+  if (!taxRate && subtotal > 0 && taxAmount > 0) {
+    taxRate = (taxAmount / subtotal) * 100;
+  }
+  if (!taxRate) taxRate = 21;
+
+  return {
+    ...invoice,
+    clientName:
+      invoice?.clientName ||
+      invoice?.client?.name ||
+      invoice?.customerName ||
+      "",
+    items,
+    subtotal: String(subtotal),
+    taxRate: String(taxRate),
+    taxAmount: String(taxAmount),
+    total: String(total),
+  };
+};
+
+const hasIssuedInvoiceOriginalPdf = (invoice: any) =>
+  Boolean(
+    invoice?.fileUrl ||
+      invoice?.extractedData?.originalPdfName ||
+      invoice?.extractedData?.originalFileName ||
+      invoice?.extractedData?.pdfPath,
+  );
+
+const getIssuedInvoicePdfUrl = (invoice: any) => {
+  if (!invoice?.id) return "";
+
+  // Para facturas emitidas importadas desde PDF usamos la misma idea que en gastos:
+  // si existe PDF original asociado en BD, servimos ese PDF físico.
+  if (hasIssuedInvoiceOriginalPdf(invoice)) {
+    return `/api/invoices/uploaded-pdf/${invoice.id}`;
+  }
+
+  // Para facturas creadas manualmente, mantenemos el PDF generado.
+  return `/api/invoice-pdf/${invoice.id}`;
+};
+
 const getStatusBadge = (status: string) => {
   const s = status?.toLowerCase() || "borrador";
   if (s === "cobrada" || s === "pagada")
@@ -191,19 +302,27 @@ export default function InvoicesPage() {
   );
 
   // === UI HELPER: BOTÓN DESCARGA ===
-  const renderDownloadButton = (id: number) => (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="text-blue-600 hover:text-blue-800"
-      onClick={(e) => {
-        e.stopPropagation();
-        window.open(`/api/invoice-pdf/${id}`, "_blank");
-      }}
-    >
-      <Download className="w-4 h-4" />
-    </Button>
-  );
+  const renderDownloadButton = (invoiceOrId: any) => {
+    const id = typeof invoiceOrId === "number" ? invoiceOrId : invoiceOrId?.id;
+    const url =
+      typeof invoiceOrId === "number"
+        ? `/api/invoice-pdf/${id}`
+        : getIssuedInvoicePdfUrl(invoiceOrId);
+
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        className="text-blue-600 hover:text-blue-800"
+        onClick={(e) => {
+          e.stopPropagation();
+          window.open(url, "_blank");
+        }}
+      >
+        <Download className="w-4 h-4" />
+      </Button>
+    );
+  };
 
   const fetchAllInvoices = useCallback(async () => {
     setIsLoadingData(true);
@@ -214,8 +333,14 @@ export default function InvoicesPage() {
       const resEmitidas = await fetch(urlEmitidas);
       if (resEmitidas.ok) {
         const dataEmitidas = await resEmitidas.json();
+        const parsedEmitidas = Array.isArray(dataEmitidas)
+          ? dataEmitidas
+          : dataEmitidas.data || [];
+
         setInvoices(
-          Array.isArray(dataEmitidas) ? dataEmitidas : dataEmitidas.data || [],
+          parsedEmitidas.map((invoice: any) =>
+            normalizeInvoiceForEditing(invoice),
+          ),
         );
       }
 
@@ -241,6 +366,27 @@ export default function InvoicesPage() {
   useEffect(() => {
     fetchAllInvoices();
   }, [fetchAllInvoices]);
+
+  const openInvoiceDetail = useCallback(async (invoice: any) => {
+    try {
+      const response = await fetch(`/api/invoices/${invoice.id}`);
+      if (!response.ok) {
+        throw new Error("No se pudo cargar el detalle actualizado");
+      }
+
+      const detail = await response.json();
+
+      setEditingInvoice(
+        normalizeInvoiceForEditing({
+          ...invoice,
+          ...detail,
+        }),
+      );
+    } catch (error) {
+      console.warn("No se pudo recargar el detalle de la factura:", error);
+      setEditingInvoice(normalizeInvoiceForEditing(invoice));
+    }
+  }, []);
 
   // === LÓGICA PARA CAPTURAR BORRADOR CREADO POR VOZ ===
   const loadVoiceDraft = useCallback(() => {
@@ -475,7 +621,7 @@ export default function InvoicesPage() {
     setIsUploading(true);
     toast({
       title: "Importando facturas emitidas",
-      description: `Se están procesando ${pdfFiles.length} PDF(s) con Google Document AI.`,
+      description: `Se están procesando ${pdfFiles.length} PDF(s) con OpenAI.`,
     });
 
     try {
@@ -495,7 +641,11 @@ export default function InvoicesPage() {
 
       const created = Array.isArray(data.created) ? data.created : [];
       if (created.length > 0) {
-        setInvoices((prev) => [...created, ...prev]);
+        setInvoices((prev) => [
+          ...created.map((invoice: any) => normalizeInvoiceForEditing(invoice)),
+          ...prev,
+        ]);
+        fetchAllInvoices();
       }
 
       const errorCount = Array.isArray(data.errors) ? data.errors.length : 0;
@@ -1058,7 +1208,7 @@ export default function InvoicesPage() {
                     <TableRow
                       key={inv.id}
                       className="cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => setEditingInvoice(inv)}
+                      onClick={() => openInvoiceDetail(inv)}
                     >
                       <TableCell className="font-medium">
                         {inv.invoiceNumber}
@@ -1080,7 +1230,7 @@ export default function InvoicesPage() {
                         })}
                       </TableCell>
                       <TableCell className="text-center">
-                        {renderDownloadButton(inv.id)}
+                        {renderDownloadButton(inv)}
                       </TableCell>
                     </TableRow>
                   ))
@@ -1127,7 +1277,7 @@ export default function InvoicesPage() {
                     <TableRow
                       key={inv.id}
                       className="cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => setEditingInvoice(inv)}
+                      onClick={() => openInvoiceDetail(inv)}
                     >
                       <TableCell className="font-medium">
                         {inv.invoiceNumber}
@@ -1149,7 +1299,7 @@ export default function InvoicesPage() {
                         })}
                       </TableCell>
                       <TableCell className="text-center">
-                        {renderDownloadButton(inv.id)}
+                        {renderDownloadButton(inv)}
                       </TableCell>
                     </TableRow>
                   ))
@@ -1704,6 +1854,272 @@ export default function InvoicesPage() {
                 editingInvoice.type === "invoice" &&
                 originalStatus !== "borrador";
 
+              const issuedPdfUrl = getIssuedInvoicePdfUrl(editingInvoice);
+              const issuedHasOriginalPdf =
+                hasIssuedInvoiceOriginalPdf(editingInvoice);
+
+              if (isReadonly) {
+                const readonlyItems = editingInvoice.items || [];
+
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 flex-1 min-h-0 overflow-hidden">
+                    {/* COLUMNA IZQUIERDA: Detalle de la factura emitida */}
+                    <div className="overflow-y-auto px-6 py-6 space-y-6 max-h-[calc(90vh-140px)] border-b lg:border-b-0 lg:border-r">
+                      <div className="grid grid-cols-2 gap-y-4 gap-x-4 text-sm bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/50">
+                        <div>
+                          <span className="text-xs text-muted-foreground block mb-1">
+                            Cliente
+                          </span>
+                          <span className="font-semibold text-blue-900 dark:text-blue-300">
+                            {editingInvoice.clientName ||
+                              (editingInvoice.clientId
+                                ? `Cliente #${editingInvoice.clientId}`
+                                : "Sin Cliente")}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground block mb-1">
+                            Nº Factura
+                          </span>
+                          <span className="font-medium">
+                            {editingInvoice.invoiceNumber || "S/N"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground block mb-1">
+                            Fecha Emisión
+                          </span>
+                          <span>
+                            {editingInvoice.issueDate
+                              ? new Date(
+                                  editingInvoice.issueDate,
+                                ).toLocaleDateString()
+                              : "Sin fecha"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground block mb-1">
+                            Total
+                          </span>
+                          <span className="font-bold text-lg">
+                            {toDisplayNumber(
+                              editingInvoice.total,
+                              0,
+                            ).toLocaleString("es-ES", {
+                              style: "currency",
+                              currency: "EUR",
+                            })}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground block mb-1">
+                            Estado
+                          </span>
+                          {getStatusBadge(editingInvoice.status)}
+                        </div>
+                        {editingInvoice.concept && (
+                          <div>
+                            <span className="text-xs text-muted-foreground block mb-1">
+                              Concepto
+                            </span>
+                            <span className="font-medium">
+                              {editingInvoice.concept}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {readonlyItems.length > 0 && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold">
+                            Conceptos de la Factura
+                          </Label>
+                          <div className="rounded-md border bg-card overflow-hidden">
+                            <Table className="text-xs">
+                              <TableHeader className="bg-muted/30">
+                                <TableRow>
+                                  <TableHead className="py-2 h-8">
+                                    Descripción
+                                  </TableHead>
+                                  <TableHead className="py-2 h-8 text-right">
+                                    Cant.
+                                  </TableHead>
+                                  <TableHead className="py-2 h-8 text-right">
+                                    Precio
+                                  </TableHead>
+                                  <TableHead className="py-2 h-8 text-right">
+                                    Importe
+                                  </TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {readonlyItems.map((line: any, idx: number) => {
+                                  const quantity = toDisplayNumber(
+                                    line.quantity,
+                                    1,
+                                  );
+                                  const unitPrice = toDisplayNumber(
+                                    line.unitPrice,
+                                    0,
+                                  );
+                                  const amount = toDisplayNumber(
+                                    line.amount,
+                                    quantity * unitPrice,
+                                  );
+
+                                  return (
+                                    <TableRow key={idx}>
+                                      <TableCell className="py-2 font-medium">
+                                        {line.description || "Sin descripción"}
+                                      </TableCell>
+                                      <TableCell className="py-2 text-right">
+                                        {quantity.toLocaleString("es-ES")}
+                                      </TableCell>
+                                      <TableCell className="py-2 text-right">
+                                        {unitPrice.toLocaleString("es-ES", {
+                                          minimumFractionDigits: 2,
+                                          maximumFractionDigits: 6,
+                                        })}{" "}
+                                        €
+                                      </TableCell>
+                                      <TableCell className="py-2 text-right font-semibold">
+                                        {amount.toLocaleString("es-ES", {
+                                          minimumFractionDigits: 2,
+                                          maximumFractionDigits: 2,
+                                        })}{" "}
+                                        €
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end gap-6 text-sm border-t pt-4">
+                        <div className="text-right space-y-2 w-64">
+                          <p className="flex justify-between items-center">
+                            <span className="text-muted-foreground">
+                              Base Imponible:
+                            </span>
+                            <span className="font-medium">
+                              {toDisplayNumber(
+                                editingInvoice.subtotal,
+                                0,
+                              ).toLocaleString("es-ES", {
+                                minimumFractionDigits: 2,
+                              })}{" "}
+                              €
+                            </span>
+                          </p>
+                          <p className="flex justify-between items-center">
+                            <span className="text-muted-foreground">
+                              IVA (
+                              {toDisplayNumber(
+                                editingInvoice.taxRate,
+                                21,
+                              ).toLocaleString("es-ES", {
+                                maximumFractionDigits: 2,
+                              })}
+                              %):
+                            </span>
+                            <span className="font-medium">
+                              {toDisplayNumber(
+                                editingInvoice.taxAmount,
+                                0,
+                              ).toLocaleString("es-ES", {
+                                minimumFractionDigits: 2,
+                              })}{" "}
+                              €
+                            </span>
+                          </p>
+                          <p className="flex justify-between items-center text-lg border-t pt-2 mt-2">
+                            <span className="font-bold">Total:</span>
+                            <span className="font-bold">
+                              {toDisplayNumber(
+                                editingInvoice.total,
+                                0,
+                              ).toLocaleString("es-ES", {
+                                minimumFractionDigits: 2,
+                              })}{" "}
+                              €
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+
+                      {editingInvoice.extractedData &&
+                        Object.keys(editingInvoice.extractedData).length >
+                          0 && (
+                          <div className="space-y-2 border-t pt-4 mt-4">
+                            <Label className="text-sm font-semibold block mb-2">
+                              Información Adicional (OCR)
+                            </Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {Object.entries(editingInvoice.extractedData).map(
+                                ([key, value]) => {
+                                  if (
+                                    [
+                                      "pdfPath",
+                                      "originalPdfName",
+                                      "originalFileName",
+                                    ].includes(key)
+                                  )
+                                    return null;
+                                  const displayValue = Array.isArray(value)
+                                    ? value.join(" | ")
+                                    : String(value ?? "");
+                                  if (!displayValue.trim()) return null;
+                                  return (
+                                    <div
+                                      key={key}
+                                      className="bg-gray-50 dark:bg-zinc-900/50 p-2 rounded border"
+                                    >
+                                      <span className="text-[10px] text-muted-foreground font-bold block">
+                                        {translateLabel(key)}
+                                      </span>
+                                      <span
+                                        className="text-xs truncate block"
+                                        title={displayValue}
+                                      >
+                                        {displayValue}
+                                      </span>
+                                    </div>
+                                  );
+                                },
+                              )}
+                            </div>
+                          </div>
+                        )}
+                    </div>
+
+                    {/* COLUMNA DERECHA: PDF original o PDF generado */}
+                    <div className="w-full h-full bg-zinc-100 dark:bg-zinc-900 flex flex-col items-center justify-center min-h-[350px] lg:min-h-0">
+                      {issuedPdfUrl ? (
+                        <iframe
+                          src={`${issuedPdfUrl}#navpanes=0&toolbar=0`}
+                          className="w-full h-full border-0 min-h-[350px] lg:h-[calc(90vh-75px)]"
+                          title={
+                            issuedHasOriginalPdf
+                              ? "Vista previa del PDF original"
+                              : "Factura PDF"
+                          }
+                        />
+                      ) : (
+                        <div className="text-center p-6 text-muted-foreground">
+                          <FileText className="w-10 h-10 mx-auto mb-2 text-zinc-400" />
+                          <p className="text-xs">
+                            Esta factura no dispone de archivo PDF asociado.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div
                   className={`grid grid-cols-1 ${!editingInvoice.isNew ? "lg:grid-cols-2" : ""} flex-1 min-h-0 overflow-hidden`}
@@ -1889,7 +2305,7 @@ export default function InvoicesPage() {
                       <Table className="border rounded-md">
                         <TableHeader className="bg-muted/30">
                           <TableRow>
-                            <TableHead>Descripción</TableHead>
+                            <TableHead>Descripción / Producto</TableHead>
                             <TableHead className="w-24 text-right">
                               Cant.
                             </TableHead>
@@ -1905,30 +2321,109 @@ export default function InvoicesPage() {
                           {(editingInvoice.items || []).map(
                             (item: any, idx: number) => (
                               <TableRow key={idx}>
-                                <TableCell className="p-2">
-                                  <Input
-                                    disabled={isReadonly}
-                                    className="disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
-                                    value={item.description}
-                                    onChange={(e) => {
-                                      const newItems = [
-                                        ...editingInvoice.items,
-                                      ];
-                                      newItems[idx].description =
-                                        e.target.value;
-                                      setEditingInvoice({
-                                        ...editingInvoice,
-                                        items: newItems,
-                                      });
-                                    }}
-                                  />
+                                <TableCell className="p-2 min-w-[450px]">
+                                  <div className="flex gap-2 items-center">
+                                    {!isReadonly && (
+                                      <Popover
+                                        open={openProductSearch === idx}
+                                        onOpenChange={(isOpen) =>
+                                          setOpenProductSearch(
+                                            isOpen ? idx : null,
+                                          )
+                                        }
+                                      >
+                                        <PopoverTrigger asChild>
+                                          <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            aria-expanded={
+                                              openProductSearch === idx
+                                            }
+                                            className="w-[220px] justify-between px-3 bg-white dark:bg-zinc-950 font-normal shrink-0"
+                                            title="Buscar en catálogo"
+                                          >
+                                            <Search className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
+                                            <span className="truncate flex-1 text-left text-muted-foreground">
+                                              Buscar producto...
+                                            </span>
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                          </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent
+                                          className="w-[350px] p-0"
+                                          align="start"
+                                        >
+                                          <Command>
+                                            <CommandInput placeholder="Buscar por nombre o tarifa..." />
+                                            <CommandList>
+                                              <CommandEmpty>
+                                                No se encontraron productos.
+                                              </CommandEmpty>
+                                              <CommandGroup>
+                                                {productOptions.map((opt) => (
+                                                  <CommandItem
+                                                    key={opt.id}
+                                                    value={opt.displayName}
+                                                    onSelect={() => {
+                                                      const newItems = [
+                                                        ...editingInvoice.items,
+                                                      ];
+                                                      newItems[
+                                                        idx
+                                                      ].description =
+                                                        opt.description;
+                                                      newItems[idx].unitPrice =
+                                                        String(
+                                                          opt.price ?? "0",
+                                                        );
+                                                      setEditingInvoice({
+                                                        ...editingInvoice,
+                                                        items: newItems,
+                                                        taxRate:
+                                                          opt.taxRate ||
+                                                          editingInvoice.taxRate,
+                                                      });
+                                                      setOpenProductSearch(
+                                                        null,
+                                                      );
+                                                    }}
+                                                  >
+                                                    {opt.displayName}
+                                                  </CommandItem>
+                                                ))}
+                                              </CommandGroup>
+                                            </CommandList>
+                                          </Command>
+                                        </PopoverContent>
+                                      </Popover>
+                                    )}
+
+                                    <Input
+                                      disabled={isReadonly}
+                                      className="flex-1 disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
+                                      value={item.description || ""}
+                                      placeholder="Concepto libre o modificado..."
+                                      onChange={(e) => {
+                                        const newItems = [
+                                          ...editingInvoice.items,
+                                        ];
+                                        newItems[idx].description =
+                                          e.target.value;
+                                        setEditingInvoice({
+                                          ...editingInvoice,
+                                          items: newItems,
+                                        });
+                                      }}
+                                    />
+                                  </div>
                                 </TableCell>
+
                                 <TableCell className="p-2">
                                   <Input
                                     type="number"
                                     disabled={isReadonly}
                                     className="text-right disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
-                                    value={item.quantity}
+                                    value={item.quantity ?? "1"}
                                     onChange={(e) => {
                                       const newItems = [
                                         ...editingInvoice.items,
@@ -1941,84 +2436,19 @@ export default function InvoicesPage() {
                                     }}
                                   />
                                 </TableCell>
-                                <TableCell className="p-2 flex gap-2 items-center min-w-[450px]">
-                                  <Popover
-                                    open={openProductSearch === idx}
-                                    onOpenChange={(isOpen) =>
-                                      setOpenProductSearch(isOpen ? idx : null)
-                                    }
-                                  >
-                                    <PopoverTrigger asChild>
-                                      <Button
-                                        variant="outline"
-                                        role="combobox"
-                                        aria-expanded={
-                                          openProductSearch === idx
-                                        }
-                                        className="w-[240px] justify-between px-3 bg-white dark:bg-zinc-950 font-normal shrink-0"
-                                        disabled={isReadonly}
-                                        title="Buscar en catálogo"
-                                      >
-                                        <Search className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
-                                        <span className="truncate flex-1 text-left text-muted-foreground">
-                                          Buscar producto...
-                                        </span>
-                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                      </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent
-                                      className="w-[350px] p-0"
-                                      align="start"
-                                    >
-                                      <Command>
-                                        <CommandInput placeholder="Buscar por nombre o tarifa..." />
-                                        <CommandList>
-                                          <CommandEmpty>
-                                            No se encontraron productos.
-                                          </CommandEmpty>
-                                          <CommandGroup>
-                                            {productOptions.map((opt) => (
-                                              <CommandItem
-                                                key={opt.id}
-                                                value={opt.displayName}
-                                                onSelect={() => {
-                                                  const newItems = [
-                                                    ...editingInvoice.items,
-                                                  ];
-                                                  newItems[idx].description =
-                                                    opt.description;
-                                                  newItems[idx].unitPrice =
-                                                    opt.price;
-                                                  setEditingInvoice({
-                                                    ...editingInvoice,
-                                                    items: newItems,
-                                                    taxRate:
-                                                      opt.taxRate ||
-                                                      editingInvoice.taxRate,
-                                                  });
-                                                  setOpenProductSearch(null);
-                                                }}
-                                              >
-                                                {opt.displayName}
-                                              </CommandItem>
-                                            ))}
-                                          </CommandGroup>
-                                        </CommandList>
-                                      </Command>
-                                    </PopoverContent>
-                                  </Popover>
 
+                                <TableCell className="p-2">
                                   <Input
+                                    type="number"
+                                    step="0.000001"
                                     disabled={isReadonly}
-                                    className="flex-1 disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
-                                    value={item.description}
-                                    placeholder="Concepto libre o modificado..."
+                                    className="text-right disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
+                                    value={item.unitPrice ?? "0"}
                                     onChange={(e) => {
                                       const newItems = [
                                         ...editingInvoice.items,
                                       ];
-                                      newItems[idx].description =
-                                        e.target.value;
+                                      newItems[idx].unitPrice = e.target.value;
                                       setEditingInvoice({
                                         ...editingInvoice,
                                         items: newItems,
@@ -2026,6 +2456,7 @@ export default function InvoicesPage() {
                                     }}
                                   />
                                 </TableCell>
+
                                 {!isReadonly && (
                                   <TableCell className="p-2 text-center">
                                     <Button
@@ -2057,23 +2488,43 @@ export default function InvoicesPage() {
                     {/* Cálculo dinámico de totales */}
                     {(() => {
                       const currentItems = editingInvoice.items || [];
-                      const calcSubtotal = currentItems.reduce(
+                      const subtotalFromItems = currentItems.reduce(
                         (acc: number, item: any) =>
                           acc +
-                          Number(item.quantity || 0) *
-                            Number(item.unitPrice || 0),
+                          toDisplayNumber(item.quantity, 0) *
+                            toDisplayNumber(item.unitPrice, 0),
                         0,
                       );
 
                       const currentTaxRate =
                         editingInvoice.taxRate !== undefined &&
                         editingInvoice.taxRate !== null
-                          ? editingInvoice.taxRate
+                          ? toDisplayNumber(editingInvoice.taxRate, 21)
                           : 21;
 
+                      const calcSubtotal =
+                        isReadonly && editingInvoice.subtotal !== undefined
+                          ? toDisplayNumber(
+                              editingInvoice.subtotal,
+                              subtotalFromItems,
+                            )
+                          : subtotalFromItems;
+
                       const calcTax =
-                        calcSubtotal * (Number(currentTaxRate) / 100);
-                      const calcTotal = calcSubtotal + calcTax;
+                        isReadonly && editingInvoice.taxAmount !== undefined
+                          ? toDisplayNumber(
+                              editingInvoice.taxAmount,
+                              calcSubtotal * (currentTaxRate / 100),
+                            )
+                          : calcSubtotal * (currentTaxRate / 100);
+
+                      const calcTotal =
+                        isReadonly && editingInvoice.total !== undefined
+                          ? toDisplayNumber(
+                              editingInvoice.total,
+                              calcSubtotal + calcTax,
+                            )
+                          : calcSubtotal + calcTax;
 
                       return (
                         <div className="flex justify-end gap-6 text-sm border-t pt-4">
@@ -2133,12 +2584,7 @@ export default function InvoicesPage() {
                   {!editingInvoice.isNew && (
                     <div className="w-full h-full bg-zinc-100 dark:bg-zinc-900 flex flex-col items-center justify-center min-h-[350px] lg:min-h-0">
                       <iframe
-                        src={
-                          editingInvoice.extractedData?.originalPdfName ||
-                          editingInvoice.extractedData?.pdfPath
-                            ? `/api/invoices/uploaded-pdf/${editingInvoice.id}#navpanes=0&toolbar=0`
-                            : `/api/invoice-pdf/${editingInvoice.id}#navpanes=0&toolbar=0`
-                        }
+                        src={`${getIssuedInvoicePdfUrl(editingInvoice)}#navpanes=0&toolbar=0`}
                         className="w-full h-full border-0 min-h-[350px] lg:h-[calc(90vh-75px)]"
                         title="Factura PDF"
                       />
@@ -2187,10 +2633,7 @@ export default function InvoicesPage() {
                   className="text-blue-600 border-blue-200 hover:bg-blue-50"
                   onClick={() =>
                     window.open(
-                      editingInvoice.extractedData?.originalPdfName ||
-                        editingInvoice.extractedData?.pdfPath
-                        ? `/api/invoices/uploaded-pdf/${editingInvoice.id}`
-                        : `/api/invoice-pdf/${editingInvoice.id}`,
+                      getIssuedInvoicePdfUrl(editingInvoice),
                       "_blank",
                     )
                   }

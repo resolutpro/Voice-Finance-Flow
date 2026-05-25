@@ -2,9 +2,11 @@ import { Router, type IRouter } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
-import { DocumentProcessorServiceClient } from "@google-cloud/documentai";
 import { eq, desc, and, ilike } from "drizzle-orm";
+import OpenAI from "openai";
+import * as workspaceDb from "@workspace/db";
 import {
   db,
   invoicesTable,
@@ -34,31 +36,13 @@ import * as XLSX from "xlsx";
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const OPENAI_INVOICE_MODEL = process.env.OPENAI_INVOICE_MODEL || "gpt-4o";
+
 const invoiceUploadRoot = path.resolve(process.cwd(), "uploads", "invoices");
-
-let docAiConfig: any = {
-  apiEndpoint: "eu-documentai.googleapis.com",
-};
-
-try {
-  if (process.env.GOOGLE_CREDENTIALS_JSON) {
-    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-    docAiConfig.credentials = {
-      client_email: credentials.client_email,
-      private_key: credentials.private_key,
-    };
-    docAiConfig.projectId =
-      credentials.project_id || process.env.DOCUMENT_AI_PROJECT_ID;
-  } else {
-    console.warn(
-      "⚠️ ADVERTENCIA: No se encontró GOOGLE_CREDENTIALS_JSON para Document AI.",
-    );
-  }
-} catch (error) {
-  console.error("❌ ERROR crítico al parsear GOOGLE_CREDENTIALS_JSON:", error);
-}
-
-const docAiClient = new DocumentProcessorServiceClient(docAiConfig);
 
 function parseMoney(value: string | null | undefined): number {
   if (!value) return 0;
@@ -89,22 +73,6 @@ function parseDateValue(value: string | null | undefined): string | null {
   return null;
 }
 
-function getDocAiConfig() {
-  let projectId = docAiConfig.projectId || process.env.DOCUMENT_AI_PROJECT_ID;
-  if (!projectId && process.env.GOOGLE_CREDENTIALS_JSON) {
-    try {
-      projectId = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON).project_id;
-    } catch {}
-  }
-
-  const location = process.env.DOCUMENT_AI_LOCATION;
-  const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID;
-  if (!projectId || !location || !processorId) return null;
-  return {
-    name: `projects/${projectId}/locations/${location}/processors/${processorId}`,
-  };
-}
-
 async function saveOriginalInvoicePdf(
   companyId: number,
   file: Express.Multer.File,
@@ -118,132 +86,786 @@ async function saveOriginalInvoicePdf(
   return absolutePath;
 }
 
-function extractIssuedInvoiceData(document: any) {
-  const allExtractedFields: Record<string, any> = {};
-  const lineItems: Array<{
-    description: string;
-    quantity: number;
-    unitPrice: number;
-    amount: number;
-  }> = [];
-  const data = {
-    clientName: "",
-    clientTaxId: "",
-    clientAddress: "",
-    invoiceNumber: "",
-    issueDate: null as string | null,
-    dueDate: null as string | null,
-    netAmount: 0,
-    taxAmount: 0,
-    totalAmount: 0,
-    lineItems,
-    allExtractedFields,
-  };
+// ============================================================================
+// OPENAI PDF PARSER PARA FACTURAS EMITIDAS
+// ============================================================================
 
-  for (const entity of document.entities || []) {
-    const type = entity.type as string | undefined;
-    const textValue = entity.mentionText || entity.normalizedValue?.text || "";
-    if (!type) continue;
+type IssuedInvoiceLineItem = {
+  description: string;
+  productCode?: string;
+  productName?: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+  taxRate?: number;
+};
 
-    if (type === "line_item" && entity.properties) {
-      const line = {
-        description: textValue || "Concepto extraído",
-        quantity: 1,
-        unitPrice: 0,
-        amount: 0,
-      };
-      for (const prop of entity.properties) {
-        const pType = prop.type || "";
-        const pText = prop.mentionText || prop.normalizedValue?.text || "";
-        if (pType.includes("description"))
-          line.description = pText || line.description;
-        if (pType.includes("quantity")) line.quantity = parseMoney(pText) || 1;
-        if (pType.includes("unit_price")) line.unitPrice = parseMoney(pText);
-        if (pType.includes("amount")) line.amount = parseMoney(pText);
-      }
-      if (!line.unitPrice && line.quantity)
-        line.unitPrice = line.amount / line.quantity;
-      lineItems.push(line);
-      continue;
-    }
+type NormalizedIssuedInvoice = {
+  clientName: string;
+  clientTaxId: string;
+  clientAddress: string;
+  clientCity: string;
+  clientProvince: string;
+  clientPostalCode: string;
+  clientEmail: string;
+  clientPhone: string;
+  invoiceNumber: string;
+  issueDate: string;
+  dueDate: string;
+  concept: string;
+  netAmount: number;
+  taxRate: number;
+  taxAmount: number;
+  totalAmount: number;
+  pageStart: number | null;
+  pageEnd: number | null;
+  lineItems: IssuedInvoiceLineItem[];
+  allExtractedFields: Record<string, any>;
+};
 
-    if (textValue) {
-      if (allExtractedFields[type]) {
-        allExtractedFields[type] = Array.isArray(allExtractedFields[type])
-          ? [...allExtractedFields[type], textValue]
-          : [allExtractedFields[type], textValue];
-      } else {
-        allExtractedFields[type] = textValue;
-      }
-    }
+const issuedInvoiceLineItemSchema = {
+  type: "object",
+  properties: {
+    description: { type: "string" },
+    productCode: { type: "string" },
+    productName: { type: "string" },
+    quantity: { type: "number" },
+    unitPrice: { type: "number" },
+    amount: { type: "number" },
+    taxRate: { type: "number" },
+  },
+  required: [
+    "description",
+    "productCode",
+    "productName",
+    "quantity",
+    "unitPrice",
+    "amount",
+    "taxRate",
+  ],
+  additionalProperties: false,
+};
 
-    switch (type) {
-      case "receiver_name":
-      case "customer_name":
-        data.clientName ||= textValue;
-        break;
-      case "receiver_tax_id":
-      case "customer_tax_id":
-        data.clientTaxId ||= textValue;
-        break;
-      case "receiver_address":
-      case "customer_address":
-        data.clientAddress ||= textValue;
-        break;
-      case "invoice_id":
-        data.invoiceNumber ||= textValue;
-        break;
-      case "invoice_date":
-        data.issueDate ||= parseDateValue(
-          entity.normalizedValue?.text || textValue,
-        );
-        break;
-      case "due_date":
-        data.dueDate ||= parseDateValue(
-          entity.normalizedValue?.text || textValue,
-        );
-        break;
-      case "net_amount":
-        data.netAmount ||= parseMoney(
-          entity.normalizedValue?.text || textValue,
-        );
-        break;
-      case "total_tax_amount":
-        data.taxAmount ||= parseMoney(
-          entity.normalizedValue?.text || textValue,
-        );
-        break;
-      case "total_amount":
-        data.totalAmount ||= parseMoney(
-          entity.normalizedValue?.text || textValue,
-        );
-        break;
-    }
-  }
-
-  if (data.netAmount === 0 && lineItems.length > 0) {
-    data.netAmount = lineItems.reduce(
-      (acc, item) => acc + (item.amount || 0),
-      0,
-    );
-  }
-  if (data.totalAmount === 0)
-    data.totalAmount = data.netAmount + data.taxAmount;
-  if (data.taxAmount === 0 && data.totalAmount > data.netAmount) {
-    data.taxAmount = data.totalAmount - data.netAmount;
-  }
-
-  if (lineItems.length === 0) {
-    lineItems.push({
+const singleIssuedInvoiceSchema = {
+  type: "object",
+  properties: {
+    clientName: { type: "string" },
+    clientTaxId: { type: "string" },
+    clientAddress: { type: "string" },
+    clientCity: { type: "string" },
+    clientProvince: { type: "string" },
+    clientPostalCode: { type: "string" },
+    clientEmail: { type: "string" },
+    clientPhone: { type: "string" },
+    invoiceNumber: { type: "string" },
+    issueDate: {
+      type: ["string", "null"],
       description:
-        data.allExtractedFields.description || "Factura importada desde PDF",
+        "Fecha de emisión en formato YYYY-MM-DD. Si no aparece, null.",
+    },
+    dueDate: {
+      type: ["string", "null"],
+      description:
+        "Fecha de vencimiento en formato YYYY-MM-DD. Si no aparece, null.",
+    },
+    concept: { type: "string" },
+    netAmount: {
+      type: "number",
+      description: "Subtotal/base imponible sin impuestos.",
+    },
+    taxRate: {
+      type: "number",
+      description: "Porcentaje de IVA/impuesto principal. Ejemplo: 21.",
+    },
+    taxAmount: {
+      type: "number",
+      description: "Importe total de impuestos.",
+    },
+    totalAmount: {
+      type: "number",
+      description: "Importe total con impuestos incluidos.",
+    },
+    pageStart: {
+      type: ["number", "null"],
+      description: "Página inicial aproximada donde empieza esta factura.",
+    },
+    pageEnd: {
+      type: ["number", "null"],
+      description: "Página final aproximada donde termina esta factura.",
+    },
+    lineItems: {
+      type: "array",
+      items: issuedInvoiceLineItemSchema,
+    },
+  },
+  required: [
+    "clientName",
+    "clientTaxId",
+    "clientAddress",
+    "clientCity",
+    "clientProvince",
+    "clientPostalCode",
+    "clientEmail",
+    "clientPhone",
+    "invoiceNumber",
+    "issueDate",
+    "dueDate",
+    "concept",
+    "netAmount",
+    "taxRate",
+    "taxAmount",
+    "totalAmount",
+    "pageStart",
+    "pageEnd",
+    "lineItems",
+  ],
+  additionalProperties: false,
+};
+
+const multiIssuedInvoiceExtractionSchema = {
+  type: "object",
+  properties: {
+    hasMultipleInvoices: {
+      type: "boolean",
+      description:
+        "true si el PDF contiene más de una factura emitida independiente.",
+    },
+    invoiceCount: {
+      type: "number",
+      description:
+        "Número total de facturas emitidas independientes detectadas.",
+    },
+    detectionSummary: {
+      type: "string",
+      description: "Resumen breve de la detección.",
+    },
+    invoices: {
+      type: "array",
+      items: singleIssuedInvoiceSchema,
+    },
+  },
+  required: [
+    "hasMultipleInvoices",
+    "invoiceCount",
+    "detectionSummary",
+    "invoices",
+  ],
+  additionalProperties: false,
+};
+
+function isPdfFile(file: Express.Multer.File): boolean {
+  return (
+    file.mimetype === "application/pdf" ||
+    /\.pdf$/i.test(file.originalname || "")
+  );
+}
+
+function toNumber(value: any, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  const raw = String(value ?? "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/€/g, "");
+
+  if (!raw) return fallback;
+
+  let normalized = raw.replace(/[^\d,.-]/g, "");
+
+  const hasComma = normalized.includes(",");
+  const hasDot = normalized.includes(".");
+
+  if (hasComma && hasDot) {
+    const lastComma = normalized.lastIndexOf(",");
+    const lastDot = normalized.lastIndexOf(".");
+
+    if (lastComma > lastDot) {
+      normalized = normalized.replace(/\./g, "").replace(",", ".");
+    } else {
+      normalized = normalized.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    normalized = normalized.replace(",", ".");
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeDate(value: any, fallback?: string): string {
+  return (
+    parseDateValue(String(value || "")) ||
+    fallback ||
+    new Date().toISOString().split("T")[0]
+  );
+}
+
+function parseAddressParts(address: string) {
+  let extractedPostalCode = "";
+  let extractedCity = "";
+  let extractedAddress = address || "";
+
+  const cpMatch = extractedAddress.match(/\b\d{5}\b/);
+  if (cpMatch) {
+    extractedPostalCode = cpMatch[0];
+    const parts = extractedAddress.split(extractedPostalCode);
+    if (parts.length > 1) {
+      extractedCity = parts[1].replace(/^[.\s,-]+/, "").trim();
+      extractedAddress = parts[0].replace(/[,\s]+$/, "").trim();
+    }
+  }
+
+  return {
+    address: extractedAddress,
+    city: extractedCity,
+    postalCode: extractedPostalCode,
+  };
+}
+
+async function createOpenAIUserDataFile(file: Express.Multer.File) {
+  if (!file.buffer) {
+    throw new Error("El PDF no tiene buffer. Revisa multer.memoryStorage().");
+  }
+
+  return await openai.files.create({
+    file: await OpenAI.toFile(
+      file.buffer,
+      file.originalname || "factura-emitida.pdf",
+      { type: file.mimetype || "application/pdf" } as any,
+    ),
+    purpose: "user_data",
+  });
+}
+
+async function deleteOpenAIFileSafely(fileId: string) {
+  try {
+    const filesApi: any = openai.files as any;
+
+    if (typeof filesApi.del === "function") {
+      await filesApi.del(fileId);
+      return;
+    }
+
+    if (typeof filesApi.delete === "function") {
+      await filesApi.delete(fileId);
+      return;
+    }
+
+    console.warn("No se encontró método para eliminar archivo OpenAI:", fileId);
+  } catch (e) {
+    console.warn("No se pudo eliminar el archivo temporal de OpenAI:", e);
+  }
+}
+
+function parseJsonFromOpenAIResponse(response: any) {
+  const text = response.output_text;
+
+  if (!text || typeof text !== "string") {
+    throw new Error("OpenAI no devolvió texto JSON procesable.");
+  }
+
+  return JSON.parse(text);
+}
+
+function normalizeLineItems(
+  rawItems: any[],
+  fallbackAmount: number,
+): IssuedInvoiceLineItem[] {
+  let items = Array.isArray(rawItems) ? rawItems : [];
+
+  items = items
+    .map((item) => {
+      const quantity = toNumber(item.quantity, 1) || 1;
+      const unitPrice = toNumber(item.unitPrice, 0);
+      const amount = toNumber(item.amount, 0) || quantity * unitPrice || 0;
+      const description =
+        item.description ||
+        item.productName ||
+        item.productCode ||
+        "Concepto extraído del PDF";
+
+      return {
+        description,
+        productCode: item.productCode || "",
+        productName: item.productName || description,
+        quantity,
+        unitPrice: unitPrice || (quantity ? amount / quantity : amount),
+        amount,
+        taxRate: toNumber(item.taxRate, 21),
+      };
+    })
+    .filter((item) => item.description && item.description !== "undefined");
+
+  if (items.length === 0) {
+    items.push({
+      description: "Factura importada desde PDF",
+      productCode: "",
+      productName: "Factura importada desde PDF",
       quantity: 1,
-      unitPrice: data.netAmount || data.totalAmount,
-      amount: data.netAmount || data.totalAmount,
+      unitPrice: fallbackAmount || 0,
+      amount: fallbackAmount || 0,
+      taxRate: 21,
     });
   }
 
-  return data;
+  return items;
+}
+
+function normalizeIssuedInvoice(
+  rawInvoice: any,
+  fallbackIndex = 1,
+): NormalizedIssuedInvoice {
+  const today = new Date().toISOString().split("T")[0];
+
+  const rawNetAmount = toNumber(rawInvoice.netAmount, 0);
+  const rawTaxAmount = toNumber(rawInvoice.taxAmount, 0);
+  const rawTotalAmount = toNumber(rawInvoice.totalAmount, 0);
+
+  let lineItems = normalizeLineItems(
+    rawInvoice.lineItems || [],
+    rawNetAmount || rawTotalAmount,
+  );
+
+  const calculatedSubtotal = lineItems.reduce(
+    (acc, item) => acc + toNumber(item.amount, 0),
+    0,
+  );
+
+  const netAmount = rawNetAmount || calculatedSubtotal || rawTotalAmount;
+  const taxAmount =
+    rawTaxAmount ||
+    (rawTotalAmount > netAmount ? rawTotalAmount - netAmount : 0);
+  const taxRate =
+    toNumber(rawInvoice.taxRate, 0) ||
+    (netAmount > 0 && taxAmount > 0 ? (taxAmount / netAmount) * 100 : 21);
+  const totalAmount = rawTotalAmount || netAmount + taxAmount;
+
+  if (
+    lineItems.length === 1 &&
+    lineItems[0].description === "Factura importada desde PDF" &&
+    netAmount > 0
+  ) {
+    lineItems[0].unitPrice = netAmount;
+    lineItems[0].amount = netAmount;
+  }
+
+  const issueDate = normalizeDate(rawInvoice.issueDate, today);
+  const dueDate = normalizeDate(rawInvoice.dueDate, issueDate);
+
+  return {
+    clientName: rawInvoice.clientName || "",
+    clientTaxId: rawInvoice.clientTaxId || "",
+    clientAddress: rawInvoice.clientAddress || "",
+    clientCity: rawInvoice.clientCity || "",
+    clientProvince: rawInvoice.clientProvince || "",
+    clientPostalCode: rawInvoice.clientPostalCode || "",
+    clientEmail: rawInvoice.clientEmail || "",
+    clientPhone: rawInvoice.clientPhone || "",
+    invoiceNumber:
+      rawInvoice.invoiceNumber || `IMPORTADA-${Date.now()}-${fallbackIndex}`,
+    issueDate,
+    dueDate,
+    concept: rawInvoice.concept || "Factura importada desde PDF",
+    netAmount,
+    taxRate,
+    taxAmount,
+    totalAmount,
+    pageStart: rawInvoice.pageStart || null,
+    pageEnd: rawInvoice.pageEnd || null,
+    lineItems,
+    allExtractedFields: rawInvoice || {},
+  };
+}
+
+async function extractIssuedInvoicesWithOpenAI(openAiFileId: string): Promise<{
+  hasMultipleInvoices: boolean;
+  invoiceCount: number;
+  detectionSummary: string;
+  invoices: NormalizedIssuedInvoice[];
+}> {
+  const response = await openai.responses.create({
+    model: OPENAI_INVOICE_MODEL,
+    input: [
+      {
+        role: "system",
+        content:
+          "Eres un experto contable y OCR especializado en facturas emitidas. Debes analizar PDFs que pueden contener una o varias facturas emitidas independientes. En facturas emitidas, el cliente es el receptor/comprador/destinatario de la factura, NO la empresa emisora. Si detectas varias facturas con número, fecha, total o líneas propias, devuélvelas separadas en invoices. No mezcles líneas ni importes entre facturas. Extrae también las líneas de producto o servicio. Si un campo no aparece, usa cadena vacía para textos, null para fechas y 0 para importes. Devuelve siempre JSON conforme al esquema.",
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: "Analiza este PDF de facturas emitidas. Detecta si hay una o varias facturas. Para cada factura extrae cliente, NIF/CIF del cliente, dirección, número, fechas, concepto, bases, IVA, total y líneas de producto/servicio con descripción, código si existe, cantidad, precio unitario e importe.",
+          },
+          {
+            type: "input_file",
+            file_id: openAiFileId,
+          },
+        ],
+      },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "issued_invoice_extraction",
+        strict: true,
+        schema: multiIssuedInvoiceExtractionSchema,
+      },
+    },
+  } as any);
+
+  const extractedJson = parseJsonFromOpenAIResponse(response);
+  const rawInvoices = Array.isArray(extractedJson.invoices)
+    ? extractedJson.invoices
+    : [];
+
+  const invoices = rawInvoices.map((rawInvoice: any, idx: number) =>
+    normalizeIssuedInvoice(rawInvoice, idx + 1),
+  );
+
+  return {
+    hasMultipleInvoices:
+      extractedJson.hasMultipleInvoices === true || invoices.length > 1,
+    invoiceCount:
+      typeof extractedJson.invoiceCount === "number"
+        ? extractedJson.invoiceCount
+        : invoices.length,
+    detectionSummary:
+      extractedJson.detectionSummary ||
+      (invoices.length > 1
+        ? `PDF con ${invoices.length} facturas emitidas.`
+        : "PDF con una única factura emitida."),
+    invoices,
+  };
+}
+
+const dynamicProductsTable =
+  (workspaceDb as any).productsTable ||
+  (workspaceDb as any).productTable ||
+  (workspaceDb as any).catalogProductsTable ||
+  null;
+
+function hasTableColumn(table: any, columnName: string): boolean {
+  return !!table && !!table[columnName];
+}
+
+function setIfColumn(
+  table: any,
+  values: Record<string, any>,
+  columnName: string,
+  value: any,
+) {
+  if (hasTableColumn(table, columnName) && value !== undefined) {
+    values[columnName] = value;
+  }
+}
+
+async function resolveProductIfAvailable({
+  tx,
+  companyId,
+  item,
+}: {
+  tx: any;
+  companyId: number;
+  item: IssuedInvoiceLineItem;
+}): Promise<number | null> {
+  const productsTable: any = dynamicProductsTable;
+
+  if (!productsTable) return null;
+  if (!hasTableColumn(productsTable, "id")) return null;
+  if (!hasTableColumn(productsTable, "companyId")) return null;
+
+  const nameColumn =
+    productsTable.name ||
+    productsTable.description ||
+    productsTable.title ||
+    null;
+
+  if (!nameColumn) return null;
+
+  const productName =
+    item.productName ||
+    item.description ||
+    item.productCode ||
+    "Producto importado";
+
+  const productCode = item.productCode || "";
+
+  try {
+    const conditions = [eq(productsTable.companyId, companyId)];
+
+    if (productCode && productsTable.sku) {
+      conditions.push(eq(productsTable.sku, productCode));
+    } else if (productCode && productsTable.code) {
+      conditions.push(eq(productsTable.code, productCode));
+    } else {
+      conditions.push(ilike(nameColumn, `%${productName}%`));
+    }
+
+    const existingProducts = await tx
+      .select()
+      .from(productsTable)
+      .where(and(...conditions))
+      .limit(1);
+
+    if (existingProducts.length > 0) {
+      return existingProducts[0].id;
+    }
+
+    const values: Record<string, any> = {};
+
+    setIfColumn(productsTable, values, "companyId", companyId);
+    setIfColumn(productsTable, values, "name", productName);
+    setIfColumn(
+      productsTable,
+      values,
+      "description",
+      item.description || productName,
+    );
+    setIfColumn(productsTable, values, "title", productName);
+    setIfColumn(productsTable, values, "sku", productCode || null);
+    setIfColumn(productsTable, values, "code", productCode || null);
+    setIfColumn(productsTable, values, "reference", productCode || null);
+    setIfColumn(
+      productsTable,
+      values,
+      "salePrice",
+      toNumber(item.unitPrice, 0).toString(),
+    );
+    setIfColumn(
+      productsTable,
+      values,
+      "price",
+      toNumber(item.unitPrice, 0).toString(),
+    );
+    setIfColumn(
+      productsTable,
+      values,
+      "unitPrice",
+      toNumber(item.unitPrice, 0).toString(),
+    );
+    setIfColumn(
+      productsTable,
+      values,
+      "taxRate",
+      toNumber(item.taxRate, 21).toString(),
+    );
+    setIfColumn(productsTable, values, "type", "product");
+    setIfColumn(productsTable, values, "status", "active");
+    setIfColumn(productsTable, values, "stock", "0");
+    setIfColumn(productsTable, values, "currentStock", "0");
+
+    if (
+      !values.companyId ||
+      (!values.name && !values.description && !values.title)
+    ) {
+      return null;
+    }
+
+    const [newProduct] = await tx
+      .insert(productsTable)
+      .values(values)
+      .returning();
+    return newProduct?.id || null;
+  } catch (error) {
+    console.warn(
+      `⚠️ No se pudo crear/enlazar producto "${productName}". Se guardará solo como línea de factura:`,
+      error,
+    );
+    return null;
+  }
+}
+
+async function resolveClientForIssuedInvoice({
+  tx,
+  companyId,
+  invoiceData,
+}: {
+  tx: any;
+  companyId: number;
+  invoiceData: NormalizedIssuedInvoice;
+}): Promise<number | null> {
+  const clientName = invoiceData.clientName || "";
+  const clientTaxId = invoiceData.clientTaxId || "";
+
+  if (!clientName && !clientTaxId) {
+    return null;
+  }
+
+  const existingClients = await tx
+    .select()
+    .from(clientsTable)
+    .where(
+      and(
+        eq(clientsTable.companyId, companyId),
+        clientTaxId
+          ? eq(clientsTable.taxId, clientTaxId)
+          : ilike(clientsTable.name, `%${clientName}%`),
+      ),
+    )
+    .limit(1);
+
+  if (existingClients.length > 0) {
+    const existingClient = existingClients[0];
+
+    if (clientTaxId && existingClient.taxId === "PENDIENTE") {
+      await tx
+        .update(clientsTable)
+        .set({ taxId: clientTaxId })
+        .where(eq(clientsTable.id, existingClient.id));
+    }
+
+    return existingClient.id;
+  }
+
+  if (!clientName) {
+    return null;
+  }
+
+  const addressParts = parseAddressParts(invoiceData.clientAddress || "");
+
+  const [newClient] = await tx
+    .insert(clientsTable)
+    .values({
+      companyId,
+      name: clientName,
+      taxId: clientTaxId || "PENDIENTE",
+      address: addressParts.address || invoiceData.clientAddress || "",
+      city: invoiceData.clientCity || addressParts.city || "",
+      province: invoiceData.clientProvince || "",
+      postalCode: invoiceData.clientPostalCode || addressParts.postalCode || "",
+      phone: invoiceData.clientPhone || null,
+      email: invoiceData.clientEmail || null,
+    })
+    .returning();
+
+  return newClient.id;
+}
+
+async function createIssuedInvoiceFromExtractedData({
+  tx,
+  companyId,
+  invoiceData,
+  fileUrl,
+  originalFileName,
+  source,
+  batchIndex,
+}: {
+  tx: any;
+  companyId: number;
+  invoiceData: NormalizedIssuedInvoice;
+  fileUrl: string;
+  originalFileName: string;
+  source: string;
+  batchIndex: number;
+}) {
+  const finalClientId = await resolveClientForIssuedInvoice({
+    tx,
+    companyId,
+    invoiceData,
+  });
+
+  const invoiceNumber =
+    invoiceData.invoiceNumber || `IMPORTADA-${Date.now()}-${batchIndex}`;
+
+  if (invoiceNumber) {
+    const existingInvoices = await tx
+      .select()
+      .from(invoicesTable)
+      .where(
+        and(
+          eq(invoicesTable.companyId, companyId),
+          eq(invoicesTable.invoiceNumber, invoiceNumber),
+        ),
+      )
+      .limit(1);
+
+    if (existingInvoices.length > 0) {
+      return {
+        invoiceId: existingInvoices[0].id,
+        clientId: existingInvoices[0].clientId || finalClientId,
+        invoiceNumber,
+        total: parseFloat(existingInvoices[0].total || "0"),
+        alreadyExisted: true,
+      };
+    }
+  }
+
+  const [invoice] = await tx
+    .insert(invoicesTable)
+    .values({
+      companyId,
+      clientId: finalClientId,
+      type: "invoice",
+      invoiceNumber,
+      status: "emitida",
+      issueDate: invoiceData.issueDate,
+      dueDate: invoiceData.dueDate || invoiceData.issueDate,
+      concept: invoiceData.concept || "Factura importada desde PDF",
+      subtotal: invoiceData.netAmount.toFixed(2),
+      taxRate: invoiceData.taxRate.toFixed(2),
+      taxAmount: invoiceData.taxAmount.toFixed(2),
+      total: invoiceData.totalAmount.toFixed(2),
+      fileUrl,
+      notes: `PDF original importado: ${originalFileName}`,
+      extractedData: {
+        source,
+        originalFileName,
+        clientName: invoiceData.clientName,
+        clientTaxId: invoiceData.clientTaxId,
+        clientAddress: invoiceData.clientAddress,
+        invoiceNumber,
+        issueDate: invoiceData.issueDate,
+        dueDate: invoiceData.dueDate,
+        subtotal: invoiceData.netAmount,
+        taxRate: invoiceData.taxRate,
+        taxAmount: invoiceData.taxAmount,
+        total: invoiceData.totalAmount,
+        pageStart: invoiceData.pageStart,
+        pageEnd: invoiceData.pageEnd,
+        allExtractedFields: invoiceData.allExtractedFields,
+      },
+    } as any)
+    .returning();
+
+  const itemsToInsert: any[] = [];
+
+  for (let idx = 0; idx < invoiceData.lineItems.length; idx++) {
+    const item = invoiceData.lineItems[idx];
+    const productId = await resolveProductIfAvailable({
+      tx,
+      companyId,
+      item,
+    });
+
+    const row: any = {
+      invoiceId: invoice.id,
+      description: item.description || "Concepto extraído del PDF",
+      quantity: toNumber(item.quantity, 1).toString(),
+      unitPrice: toNumber(item.unitPrice, 0).toFixed(6),
+      amount: toNumber(item.amount, 0).toFixed(6),
+      sortOrder: idx,
+    };
+
+    if (productId && hasTableColumn(invoiceItemsTable as any, "productId")) {
+      row.productId = productId;
+    }
+
+    itemsToInsert.push(row);
+  }
+
+  if (itemsToInsert.length > 0) {
+    await tx.insert(invoiceItemsTable).values(itemsToInsert);
+  }
+
+  return {
+    invoiceId: invoice.id,
+    clientId: finalClientId,
+    invoiceNumber,
+    total: invoiceData.totalAmount,
+    alreadyExisted: false,
+  };
 }
 
 interface ProcessedItem {
@@ -520,16 +1142,9 @@ router.post(
         res.status(400).json({ error: "Falta el companyId" });
         return;
       }
+
       if (files.length === 0) {
         res.status(400).json({ error: "No se subió ningún PDF" });
-        return;
-      }
-
-      const config = getDocAiConfig();
-      if (!config) {
-        res
-          .status(500)
-          .json({ error: "Configuración de Document AI incompleta" });
         return;
       }
 
@@ -537,7 +1152,7 @@ router.post(
       const errors: Array<{ fileName: string; error: string }> = [];
 
       for (const file of files) {
-        if (file.mimetype !== "application/pdf") {
+        if (!isPdfFile(file)) {
           errors.push({
             fileName: file.originalname,
             error: "Solo se permiten PDFs",
@@ -545,122 +1160,84 @@ router.post(
           continue;
         }
 
-        try {
-          const [docAiResult] = await docAiClient.processDocument({
-            name: config.name,
-            rawDocument: {
-              content: file.buffer.toString("base64"),
-              mimeType: file.mimetype,
-            },
-          });
+        let openAiFile: any = null;
 
-          if (!docAiResult.document) {
-            throw new Error("Document AI no devolvió datos legibles");
+        try {
+          console.log(
+            `📄 [OPENAI-ISSUED-BULK] Procesando PDF emitido: ${file.originalname}`,
+          );
+
+          const fileUrl = await saveOriginalInvoicePdf(companyId, file);
+          openAiFile = await createOpenAIUserDataFile(file);
+
+          const extraction = await extractIssuedInvoicesWithOpenAI(
+            openAiFile.id,
+          );
+
+          if (extraction.invoices.length === 0) {
+            throw new Error(
+              "OpenAI no detectó ninguna factura emitida válida en el PDF",
+            );
           }
 
-          const extracted = extractIssuedInvoiceData(docAiResult.document);
-          const fileUrl = await saveOriginalInvoicePdf(companyId, file);
-          const issueDate =
-            extracted.issueDate || new Date().toISOString().split("T")[0];
-          const subtotal =
-            extracted.netAmount ||
-            extracted.lineItems.reduce((acc, item) => acc + item.amount, 0);
-          const taxAmount = extracted.taxAmount || 0;
-          const total = extracted.totalAmount || subtotal + taxAmount;
-          const taxRate = subtotal > 0 ? (taxAmount / subtotal) * 100 : 21;
+          console.log(
+            extraction.hasMultipleInvoices
+              ? `⚠️ [OPENAI-ISSUED-BULK] PDF con ${extraction.invoices.length} facturas emitidas detectadas`
+              : "✅ [OPENAI-ISSUED-BULK] PDF con una factura emitida detectada",
+          );
 
-          const result = await db.transaction(async (tx) => {
-            let finalClientId: number | null = null;
+          const results = await db.transaction(async (tx) => {
+            const saved = [];
 
-            if (extracted.clientName || extracted.clientTaxId) {
-              const existingClients = await tx
-                .select()
-                .from(clientsTable)
-                .where(
-                  and(
-                    eq(clientsTable.companyId, companyId),
-                    extracted.clientTaxId
-                      ? eq(clientsTable.taxId, extracted.clientTaxId)
-                      : ilike(clientsTable.name, `%${extracted.clientName}%`),
-                  ),
-                )
-                .limit(1);
-
-              if (existingClients.length > 0) {
-                finalClientId = existingClients[0].id;
-              } else if (extracted.clientName) {
-                const [newClient] = await tx
-                  .insert(clientsTable)
-                  .values({
-                    companyId,
-                    name: extracted.clientName,
-                    taxId: extracted.clientTaxId || "PENDIENTE",
-                    address: extracted.clientAddress || "",
-                    city: "",
-                    province: "",
-                    postalCode: "",
-                  })
-                  .returning();
-                finalClientId = newClient.id;
-              }
-            }
-
-            const [invoice] = await tx
-              .insert(invoicesTable)
-              .values({
+            for (let idx = 0; idx < extraction.invoices.length; idx++) {
+              const created = await createIssuedInvoiceFromExtractedData({
+                tx,
                 companyId,
-                clientId: finalClientId,
-                type: "invoice",
-                invoiceNumber:
-                  extracted.invoiceNumber ||
-                  `IMPORTADA-${Date.now()}-${createdInvoices.length + 1}`,
-                status: "emitida",
-                issueDate,
-                dueDate: extracted.dueDate || issueDate,
-                concept: "Factura importada desde PDF",
-                subtotal: subtotal.toFixed(2),
-                taxRate: taxRate.toFixed(2),
-                taxAmount: taxAmount.toFixed(2),
-                total: total.toFixed(2),
+                invoiceData: extraction.invoices[idx],
                 fileUrl,
-                notes: `PDF original importado: ${file.originalname}`,
-              })
-              .returning();
+                originalFileName: file.originalname,
+                source: extraction.hasMultipleInvoices
+                  ? "OpenAI PDF Parser - PDF con varias facturas emitidas"
+                  : "OpenAI PDF Parser - Factura emitida",
+                batchIndex: createdInvoices.length + idx + 1,
+              });
 
-            const itemsToInsert = extracted.lineItems.map((item, idx) => ({
-              invoiceId: invoice.id,
-              description: item.description || "Concepto extraído del PDF",
-              quantity: (item.quantity || 1).toString(),
-              unitPrice: (item.unitPrice || item.amount || 0).toFixed(6),
-              amount: (
-                item.amount || (item.unitPrice || 0) * (item.quantity || 1)
-              ).toFixed(6),
-              sortOrder: idx,
-            }));
-
-            if (itemsToInsert.length > 0) {
-              await tx.insert(invoiceItemsTable).values(itemsToInsert);
+              saved.push(created);
             }
 
-            return invoice.id;
+            return saved;
           });
 
-          const fullInvoice = await getInvoiceWithItems(result);
-          if (fullInvoice) createdInvoices.push(fullInvoice);
+          for (const result of results) {
+            const fullInvoice = await getInvoiceWithItems(result.invoiceId);
+
+            if (fullInvoice) {
+              createdInvoices.push({
+                ...fullInvoice,
+                alreadyExisted: result.alreadyExisted,
+              });
+            }
+          }
         } catch (error: any) {
           console.error(
             `❌ Error importando PDF emitido ${file.originalname}:`,
             error,
           );
+
           errors.push({
             fileName: file.originalname,
             error: error?.message || "No se pudo procesar el PDF",
           });
+        } finally {
+          if (openAiFile?.id) {
+            await deleteOpenAIFileSafely(openAiFile.id);
+          }
         }
       }
 
       res.status(createdInvoices.length > 0 ? 201 : 400).json({
         success: createdInvoices.length > 0,
+        createdCount: createdInvoices.length,
         created: createdInvoices,
         errors,
       });
@@ -669,10 +1246,80 @@ router.post(
         "❌ Error general en subida masiva de facturas emitidas:",
         error,
       );
-      res.status(500).json({ error: "Fallo al procesar la subida masiva" });
+
+      res.status(500).json({
+        error: error?.message || "Fallo al procesar la subida masiva",
+      });
     }
   },
 );
+
+// ============================================================================
+// PDF ORIGINAL DE FACTURA EMITIDA IMPORTADA
+// ============================================================================
+
+function resolveStoredInvoicePdfPath(invoice: any): string | null {
+  const rawFileUrl = invoice?.fileUrl;
+  if (!rawFileUrl || typeof rawFileUrl !== "string") return null;
+
+  const candidates = [
+    rawFileUrl,
+    path.isAbsolute(rawFileUrl)
+      ? rawFileUrl
+      : path.resolve(invoiceUploadRoot, String(invoice.companyId), rawFileUrl),
+    path.resolve(process.cwd(), rawFileUrl),
+  ];
+
+  const uniqueCandidates = Array.from(new Set(candidates));
+  return uniqueCandidates.find((candidate) => existsSync(candidate)) || null;
+}
+
+async function sendStoredInvoicePdf(req: any, res: any): Promise<void> {
+  try {
+    const id = Number(req.params.id);
+
+    if (!id || Number.isNaN(id)) {
+      res.status(400).json({ error: "ID inválido" });
+      return;
+    }
+
+    const [invoice] = await db
+      .select()
+      .from(invoicesTable)
+      .where(eq(invoicesTable.id, id))
+      .limit(1);
+
+    if (!invoice || !invoice.fileUrl) {
+      res.status(404).json({
+        error: "Esta factura emitida no tiene un PDF original asociado",
+      });
+      return;
+    }
+
+    const filePath = resolveStoredInvoicePdfPath(invoice);
+
+    if (!filePath) {
+      res.status(404).json({
+        error: "El archivo físico no existe en el servidor",
+      });
+      return;
+    }
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.sendFile(filePath);
+  } catch (error: any) {
+    console.error("❌ Error sirviendo PDF original de factura emitida:", error);
+    res.status(500).json({
+      error: error.message || "Error al recuperar el PDF original",
+    });
+  }
+}
+
+// Ruta nueva clara.
+router.get("/invoices/pdf/:id", sendStoredInvoicePdf);
+
+// Alias compatible con el frontend anterior.
+router.get("/invoices/uploaded-pdf/:id", sendStoredInvoicePdf);
 
 router.get("/invoices/:id", async (req, res): Promise<void> => {
   const params = GetInvoiceParams.safeParse(req.params);
@@ -1122,14 +1769,43 @@ router.post(
           })
           .returning();
 
-        // D. Insertar las Líneas (Items)
-        const itemsToInsert = items.map((item) => ({
-          invoiceId: invoice.id,
-          description: item.description,
-          quantity: item.quantity.toString(),
-          unitPrice: item.unitPrice.toFixed(6), // 6 decimales de precisión
-          amount: item.amount.toFixed(6),
-        }));
+        // D. Crear/enlazar productos si existe productsTable e insertar las líneas
+        const itemsToInsert: any[] = [];
+
+        for (let idx = 0; idx < items.length; idx++) {
+          const item = items[idx];
+          const productId = await resolveProductIfAvailable({
+            tx,
+            companyId: parseInt(companyId),
+            item: {
+              description: item.description,
+              productName: item.description,
+              productCode: item.productCode || "",
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              amount: item.amount,
+              taxRate,
+            },
+          });
+
+          const row: any = {
+            invoiceId: invoice.id,
+            description: item.description,
+            quantity: item.quantity.toString(),
+            unitPrice: item.unitPrice.toFixed(6), // 6 decimales de precisión
+            amount: item.amount.toFixed(6),
+            sortOrder: idx,
+          };
+
+          if (
+            productId &&
+            hasTableColumn(invoiceItemsTable as any, "productId")
+          ) {
+            row.productId = productId;
+          }
+
+          itemsToInsert.push(row);
+        }
 
         await tx.insert(invoiceItemsTable).values(itemsToInsert);
 
