@@ -18,11 +18,86 @@ import {
   RegisterVendorPaymentBody,
 } from "@workspace/api-zod";
 import multer from "multer";
-import { DocumentProcessorServiceClient } from "@google-cloud/documentai";
+import OpenAI from "openai";
 import path from "path";
 import fs from "fs";
 
 const router: IRouter = Router();
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const invoiceSchema = {
+  type: "object",
+  properties: {
+    supplierName: { type: "string" },
+    supplierTaxId: { type: "string" },
+    invoiceNumber: { type: "string" },
+    issueDate: {
+      type: ["string", "null"],
+      description: "Formato YYYY-MM-DD",
+    },
+    dueDate: {
+      type: ["string", "null"],
+      description: "Formato YYYY-MM-DD",
+    },
+    netAmount: { type: "number" },
+    taxAmount: { type: "number" },
+    totalAmount: { type: "number" },
+    lineItems: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          description: { type: "string" },
+          quantity: { type: "number" },
+          unitPrice: { type: "number" },
+          amount: { type: "number" },
+        },
+        required: ["description", "quantity", "unitPrice", "amount"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: [
+    "supplierName",
+    "supplierTaxId",
+    "invoiceNumber",
+    "issueDate",
+    "dueDate",
+    "netAmount",
+    "taxAmount",
+    "totalAmount",
+    "lineItems",
+  ],
+  additionalProperties: false,
+};
+
+async function uploadPdfToOpenAI(file: Express.Multer.File) {
+  // Si usas multer.memoryStorage()
+  if (file.buffer) {
+    return await openai.files.create({
+      file: await OpenAI.toFile(
+        file.buffer,
+        file.originalname || "factura.pdf",
+        { type: file.mimetype || "application/pdf" },
+      ),
+      purpose: "user_data",
+    });
+  }
+
+  // Si usas multer.diskStorage()
+  if (file.path) {
+    return await openai.files.create({
+      file: fs.createReadStream(file.path),
+      purpose: "user_data",
+    });
+  }
+
+  throw new Error(
+    "El archivo no tiene ni buffer ni path. Revisa la configuración de multer.",
+  );
+}
 
 // ============================================================================
 // 1. ENDPOINT DE IA: PROCESAR PDF CON GOOGLE DOCUMENT AI
@@ -68,8 +143,6 @@ try {
   console.error("❌ ERROR crítico al parsear GOOGLE_CREDENTIALS_JSON:", error);
 }
 
-const docAiClient = new DocumentProcessorServiceClient(docAiConfig);
-
 // Función helper para limpiar números en formato español/europeo
 const parseSpanishNumber = (text: string): number => {
   const cleaned = text.replace(/[^0-9.,-]+/g, "");
@@ -81,10 +154,196 @@ const parseSpanishNumber = (text: string): number => {
   return parseFloat(cleaned.replace(",", ".")) || 0;
 };
 
+// ============================================================================
+// HELPERS OPENAI PDF PARSER
+// ============================================================================
+
+const OPENAI_INVOICE_MODEL = process.env.OPENAI_INVOICE_MODEL || "gpt-4o";
+
+const invoiceExtractionSchema = {
+  type: "object",
+  properties: {
+    supplierName: { type: "string" },
+    supplierTaxId: { type: "string" },
+    supplierAddress: { type: "string" },
+    invoiceNumber: { type: "string" },
+    issueDate: {
+      type: ["string", "null"],
+      description: "Fecha de emisión en formato YYYY-MM-DD. Si no aparece, null.",
+    },
+    dueDate: {
+      type: ["string", "null"],
+      description: "Fecha de vencimiento en formato YYYY-MM-DD. Si no aparece, null.",
+    },
+    netAmount: {
+      type: "number",
+      description: "Base imponible o subtotal sin impuestos.",
+    },
+    taxRate: {
+      type: "number",
+      description: "Porcentaje de IVA/impuesto principal. Ejemplo: 21.",
+    },
+    taxAmount: {
+      type: "number",
+      description: "Importe total de impuestos.",
+    },
+    totalAmount: {
+      type: "number",
+      description: "Importe total de la factura con impuestos incluidos.",
+    },
+    lineItems: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          description: { type: "string" },
+          quantity: { type: "number" },
+          unitPrice: { type: "number" },
+          amount: { type: "number" },
+        },
+        required: ["description", "quantity", "unitPrice", "amount"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: [
+    "supplierName",
+    "supplierTaxId",
+    "supplierAddress",
+    "invoiceNumber",
+    "issueDate",
+    "dueDate",
+    "netAmount",
+    "taxRate",
+    "taxAmount",
+    "totalAmount",
+    "lineItems",
+  ],
+  additionalProperties: false,
+};
+
+function isPdfFile(file: Express.Multer.File): boolean {
+  return (
+    file.mimetype === "application/pdf" ||
+    /\.pdf$/i.test(file.originalname || "")
+  );
+}
+
+function isSpreadsheetFile(file: Express.Multer.File): boolean {
+  return (
+    [
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel",
+      "text/csv",
+      "application/csv",
+    ].includes(file.mimetype) ||
+    /\.(xlsx|xls|csv)$/i.test(file.originalname || "")
+  );
+}
+
+async function getMulterFileBuffer(file: Express.Multer.File): Promise<Buffer> {
+  if (file.buffer) return file.buffer;
+  if (file.path) return await fs.promises.readFile(file.path);
+
+  throw new Error(
+    "El archivo no tiene buffer ni path. Revisa la configuración de multer.",
+  );
+}
+
+async function createOpenAIUserDataFile(file: Express.Multer.File) {
+  if (file.path) {
+    return await openai.files.create({
+      file: fs.createReadStream(file.path),
+      purpose: "user_data",
+    });
+  }
+
+  const buffer = await getMulterFileBuffer(file);
+
+  return await openai.files.create({
+    file: await OpenAI.toFile(
+      buffer,
+      file.originalname || "documento.pdf",
+      {
+        type: file.mimetype || "application/pdf",
+      } as any,
+    ),
+    purpose: "user_data",
+  });
+}
+
+async function deleteOpenAIFileSafely(fileId: string) {
+  try {
+    const filesApi: any = openai.files as any;
+
+    if (typeof filesApi.del === "function") {
+      await filesApi.del(fileId);
+      return;
+    }
+
+    if (typeof filesApi.delete === "function") {
+      await filesApi.delete(fileId);
+      return;
+    }
+
+    console.warn("No se encontró método para eliminar archivo OpenAI:", fileId);
+  } catch (e) {
+    console.warn("No se pudo eliminar el archivo temporal de OpenAI:", e);
+  }
+}
+
+function parseJsonFromOpenAIResponse(response: any) {
+  const text = response.output_text;
+
+  if (!text || typeof text !== "string") {
+    throw new Error("OpenAI no devolvió texto JSON procesable.");
+  }
+
+  return JSON.parse(text);
+}
+
+function toNumber(value: any, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  const raw = String(value ?? "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/€/g, "");
+
+  if (!raw) return fallback;
+
+  let normalized = raw.replace(/[^\d,.-]/g, "");
+
+  const hasComma = normalized.includes(",");
+  const hasDot = normalized.includes(".");
+
+  if (hasComma && hasDot) {
+    const lastComma = normalized.lastIndexOf(",");
+    const lastDot = normalized.lastIndexOf(".");
+
+    if (lastComma > lastDot) {
+      normalized = normalized.replace(/\./g, "").replace(",", ".");
+    } else {
+      normalized = normalized.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    normalized = normalized.replace(",", ".");
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+// ============================================================================
+// 1. ENDPOINT PARA PARSEAR FACTURA PDF SIN AUTOGUARDADO
+// ============================================================================
+
 router.post(
   "/vendor-invoices/parse",
   upload.single("file"),
   async (req, res): Promise<void> => {
+    let openAiFile: any = null;
+
     try {
       const file = req.file;
       const companyId = req.body.companyId;
@@ -93,158 +352,79 @@ router.post(
         res.status(400).json({ error: "No se subió ningún archivo PDF" });
         return;
       }
+
       if (!companyId) {
         res.status(400).json({ error: "Falta el companyId" });
         return;
       }
 
-      let projectId =
-        docAiConfig.projectId || process.env.DOCUMENT_AI_PROJECT_ID;
-      const location = process.env.DOCUMENT_AI_LOCATION;
-      const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID;
-
-      if (!projectId && process.env.GOOGLE_CREDENTIALS_JSON) {
-        try {
-          const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-          projectId = creds.project_id;
-        } catch (e) {}
-      }
-
-      if (!projectId || !location || !processorId) {
-        res
-          .status(500)
-          .json({ error: "Configuración de Document AI incompleta" });
+      if (!isPdfFile(file)) {
+        res.status(400).json({
+          error: "Formato no válido. Este endpoint solo acepta archivos PDF.",
+        });
         return;
       }
 
-      // Leemos el buffer desde la ruta del disco donde Multer acaba de descargar el documento
-      const fileBuffer = fs.readFileSync(file.path);
+      console.log(`📄 [OPENAI-PARSER] Procesando PDF: ${file.originalname}`);
 
-      const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
-      const [result] = await docAiClient.processDocument({
-        name,
-        rawDocument: {
-          content: fileBuffer.toString("base64"),
-          mimeType: file.mimetype,
+      // 1. Subir PDF a OpenAI como user_data, NO como vision
+      openAiFile = await createOpenAIUserDataFile(file);
+
+      // 2. Procesar PDF con Responses API
+      const response = await openai.responses.create({
+        model: OPENAI_INVOICE_MODEL,
+        input: [
+          {
+            role: "system",
+            content:
+              "Eres un experto contable y un sistema OCR de extracción de facturas. Analiza facturas PDF recibidas de proveedores. Extrae los datos reales del documento. Si un campo no aparece, devuelve cadena vacía para textos, null para fechas y 0 para importes. Devuelve siempre JSON conforme al esquema.",
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text:
+                  "Extrae los datos principales de esta factura recibida de proveedor. Lee tanto texto digital como contenido visual o escaneado del PDF.",
+              },
+              {
+                type: "input_file",
+                file_id: openAiFile.id,
+              },
+            ],
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "invoice_extraction",
+            strict: true,
+            schema: invoiceExtractionSchema,
+          },
         },
-      });
+      } as any);
 
-      const document = result.document;
-      if (!document || !document.entities) {
-        res
-          .status(400)
-          .json({ error: "No se pudieron extraer datos legibles" });
-        return;
-      }
+      const extractedJson = parseJsonFromOpenAIResponse(response);
 
-      let extractedData = {
-        supplierName: "",
-        supplierTaxId: "",
-        invoiceNumber: "",
-        issueDate: null as string | null,
-        dueDate: null as string | null,
-        netAmount: 0,
-        taxAmount: 0,
-        totalAmount: 0,
-        lineItems: [] as any[],
-        allExtractedFields: {} as Record<string, any>,
+      const extractedData = {
+        supplierName: extractedJson.supplierName || "",
+        supplierTaxId: extractedJson.supplierTaxId || "",
+        supplierAddress: extractedJson.supplierAddress || "Pendiente",
+        invoiceNumber: extractedJson.invoiceNumber || "",
+        issueDate: extractedJson.issueDate || null,
+        dueDate: extractedJson.dueDate || null,
+        netAmount: toNumber(extractedJson.netAmount, 0),
+        taxRate: toNumber(extractedJson.taxRate, 21),
+        taxAmount: toNumber(extractedJson.taxAmount, 0),
+        totalAmount: toNumber(extractedJson.totalAmount, 0),
+        lineItems: Array.isArray(extractedJson.lineItems)
+          ? extractedJson.lineItems
+          : [],
+        allExtractedFields: extractedJson,
       };
 
-      // ✅ SE CORRIGE ESTRUCTURALMENTE: for...of en lugar de forEach para evitar romper el flujo asíncrono
-      for (const entity of document.entities) {
-        const type = entity.type;
-        const textValue =
-          entity.mentionText || entity.normalizedValue?.text || "";
-
-        if (!type) continue;
-
-        if (type === "line_item" && entity.properties) {
-          let line = {
-            description: textValue,
-            quantity: 1,
-            unitPrice: 0,
-            amount: 0,
-          };
-          entity.properties.forEach((prop) => {
-            const pType = prop.type;
-            const pText = prop.mentionText || prop.normalizedValue?.text || "";
-            if (pType.includes("description")) line.description = pText;
-            if (pType.includes("quantity"))
-              line.quantity = parseSpanishNumber(pText) || 1;
-            if (pType.includes("unit_price"))
-              line.unitPrice = parseSpanishNumber(pText) || 0;
-            if (pType.includes("amount"))
-              line.amount = parseSpanishNumber(pText) || 0;
-          });
-          extractedData.lineItems.push(line);
-          continue;
-        }
-
-        if (!textValue) continue;
-
-        if (extractedData.allExtractedFields[type]) {
-          if (Array.isArray(extractedData.allExtractedFields[type]))
-            extractedData.allExtractedFields[type].push(textValue);
-          else
-            extractedData.allExtractedFields[type] = [
-              extractedData.allExtractedFields[type],
-              textValue,
-            ];
-        } else {
-          extractedData.allExtractedFields[type] = textValue;
-        }
-
-        switch (type) {
-          case "supplier_name":
-            extractedData.supplierName = textValue;
-            break;
-          case "supplier_tax_id":
-            extractedData.supplierTaxId = textValue;
-            break;
-          case "invoice_id":
-            extractedData.invoiceNumber = textValue;
-            break;
-          case "invoice_date":
-            extractedData.issueDate = entity.normalizedValue?.dateValue
-              ? `${entity.normalizedValue.dateValue.year}-${String(entity.normalizedValue.dateValue.month).padStart(2, "0")}-${String(entity.normalizedValue.dateValue.day).padStart(2, "0")}`
-              : textValue;
-            break;
-          case "due_date":
-            extractedData.dueDate = entity.normalizedValue?.dateValue
-              ? `${entity.normalizedValue.dateValue.year}-${String(entity.normalizedValue.dateValue.month).padStart(2, "0")}-${String(entity.normalizedValue.dateValue.day).padStart(2, "0")}`
-              : textValue;
-            break;
-          case "net_amount": {
-            const cleaned = textValue.replace(/[^0-9.,-]+/g, "");
-            const cleanNumber =
-              cleaned.includes(",") && cleaned.includes(".")
-                ? cleaned.replace(/\./g, "").replace(",", ".")
-                : cleaned.replace(",", ".");
-            extractedData.netAmount = parseFloat(cleanNumber) || 0;
-            break;
-          }
-          case "total_tax_amount": {
-            const cleaned = textValue.replace(/[^0-9.,-]+/g, "");
-            const cleanNumber =
-              cleaned.includes(",") && cleaned.includes(".")
-                ? cleaned.replace(/\./g, "").replace(",", ".")
-                : cleaned.replace(",", ".");
-            extractedData.taxAmount = parseFloat(cleanNumber) || 0;
-            break;
-          }
-          case "total_amount": {
-            const cleaned = textValue.replace(/[^0-9.,-]+/g, "");
-            const cleanNumber =
-              cleaned.includes(",") && cleaned.includes(".")
-                ? cleaned.replace(/\./g, "").replace(",", ".")
-                : cleaned.replace(",", ".");
-            extractedData.totalAmount = parseFloat(cleanNumber) || 0;
-            break;
-          }
-        }
-      }
-
       let supplierId = null;
+
       if (extractedData.supplierName) {
         const existingSuppliers = await db
           .select()
@@ -259,6 +439,7 @@ router.post(
 
         if (existingSuppliers.length > 0) {
           supplierId = existingSuppliers[0].id;
+
           if (
             extractedData.supplierTaxId &&
             existingSuppliers[0].taxId === "PENDIENTE"
@@ -275,56 +456,81 @@ router.post(
               companyId: parseInt(companyId),
               name: extractedData.supplierName,
               taxId: extractedData.supplierTaxId || "PENDIENTE",
-              address: "Pendiente",
+              address: extractedData.supplierAddress || "Pendiente",
               city: "Pendiente",
               postalCode: "00000",
             })
             .returning();
+
           supplierId = newSupplier.id;
         }
       }
 
-      // Devolvemos el nombre del archivo generado ('file.filename') para que el front lo almacene en el siguiente paso
+      console.log("✅ [OPENAI-PARSER] PDF procesado correctamente");
+
       res.json({
         success: true,
         parsedData: {
           ...extractedData,
           supplierId,
-          pdfPath: file.filename,
+          pdfPath: file.filename || file.originalname,
         },
       });
     } catch (error: any) {
+      console.error("❌ Error en OpenAI Parser:", error);
+
       res.status(500).json({
-        error: error.message || "Error interno al procesar el documento.",
+        error:
+          error.message ||
+          "Error interno al procesar el documento con OpenAI.",
       });
+    } finally {
+      if (openAiFile?.id) {
+        await deleteOpenAIFileSafely(openAiFile.id);
+      }
     }
   },
 );
 
 // ============================================================================
-// 1.5 ENDPOINT PARA OPENCLAW: RUTEO INTELIGENTE (PDF o EXCEL) Y AUTOGUARDADO
+// 1.5 ENDPOINT PARA OPENCLAW: RUTEO INTELIGENTE PDF/EXCEL Y AUTOGUARDADO
 // ============================================================================
 
 router.post(
   "/vendor-invoices/parse/auto",
   upload.single("file"),
   async (req, res): Promise<void> => {
+    let openAiFile: any = null;
+
     try {
       const file = req.file;
       const companyId = req.body.companyId;
 
-      if (!file || !file.buffer) {
+      if (!file) {
         res.status(400).json({ error: "No se proporcionó ningún archivo" });
         return;
       }
+
       if (!companyId) {
         res.status(400).json({ error: "Falta el companyId" });
         return;
       }
 
-      const isPDF = file.mimetype === "application/pdf";
+      const isPDF = isPdfFile(file);
+      const isSpreadsheet = isSpreadsheetFile(file);
+
+      if (!isPDF && !isSpreadsheet) {
+        res.status(400).json({
+          error:
+            "Formato no válido. Solo se aceptan PDF, XLSX, XLS o CSV.",
+        });
+        return;
+      }
+
       console.log(
-        `🤖 [OPENCLAW-AUTO] Procesando ${isPDF ? "PDF" : "EXCEL"}: ${file.originalname}`,
+        `🤖 [OPENCLAW-AUTO] Procesando ${
+          isPDF ? "PDF" : "EXCEL/CSV"
+        }: ${file.originalname}`,
       );
 
       let items: any[] = [];
@@ -333,165 +539,306 @@ router.post(
       let supplierAddress = "Pendiente";
       let invoiceNumber = `AUTO-${Date.now()}`;
       let issueDate = new Date().toISOString().split("T")[0];
+      let dueDate = issueDate;
 
+      let extractedNetAmount: number | null = null;
+      let extractedTaxRate: number | null = null;
+      let extractedTaxAmount: number | null = null;
+      let extractedTotalAmount: number | null = null;
+
+      // ----------------------------------------------------------------------
+      // PDF -> OpenAI Responses API
+      // ----------------------------------------------------------------------
       if (isPDF) {
-        let projectId =
-          docAiConfig.projectId || process.env.DOCUMENT_AI_PROJECT_ID;
-        const location = process.env.DOCUMENT_AI_LOCATION;
-        const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID;
+        openAiFile = await createOpenAIUserDataFile(file);
 
-        const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
-        const [result] = await docAiClient.processDocument({
-          name,
-          rawDocument: {
-            content: file.buffer.toString("base64"),
-            mimeType: file.mimetype,
+        const response = await openai.responses.create({
+          model: OPENAI_INVOICE_MODEL,
+          input: [
+            {
+              role: "system",
+              content:
+                "Eres un sistema automático OCR contable. Analiza facturas PDF recibidas de proveedores. Extrae proveedor, NIF/CIF, dirección, número de factura, fechas, bases, impuestos, total y líneas de factura. Si un campo no aparece, devuelve cadena vacía para textos, null para fechas y 0 para importes. Devuelve siempre JSON conforme al esquema.",
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "input_text",
+                  text:
+                    "Analiza esta factura PDF y extrae sus datos contables para crear una factura recibida en el ERP.",
+                },
+                {
+                  type: "input_file",
+                  file_id: openAiFile.id,
+                },
+              ],
+            },
+          ],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "auto_invoice_extraction",
+              strict: true,
+              schema: invoiceExtractionSchema,
+            },
           },
-        });
+        } as any);
 
-        if (!result.document || !result.document.entities) {
-          res
-            .status(400)
-            .json({ error: "Google AI no pudo extraer datos del PDF" });
+        const extractedJson = parseJsonFromOpenAIResponse(response);
+
+        supplierName = extractedJson.supplierName || "";
+        supplierNif = extractedJson.supplierTaxId || "";
+        supplierAddress = extractedJson.supplierAddress || "Pendiente";
+        invoiceNumber = extractedJson.invoiceNumber || `AUTO-${Date.now()}`;
+
+        if (extractedJson.issueDate) issueDate = extractedJson.issueDate;
+        if (extractedJson.dueDate) dueDate = extractedJson.dueDate;
+        else dueDate = issueDate;
+
+        items = Array.isArray(extractedJson.lineItems)
+          ? extractedJson.lineItems
+          : [];
+
+        extractedNetAmount = toNumber(extractedJson.netAmount, 0);
+        extractedTaxRate = toNumber(extractedJson.taxRate, 21);
+        extractedTaxAmount = toNumber(extractedJson.taxAmount, 0);
+        extractedTotalAmount = toNumber(extractedJson.totalAmount, 0);
+      }
+
+      // ----------------------------------------------------------------------
+      // EXCEL / CSV -> XLSX Parser local
+      // ----------------------------------------------------------------------
+      else {
+        const fileBuffer = await getMulterFileBuffer(file);
+
+        // @ts-ignore
+        const workbook = XLSX.read(fileBuffer, { type: "buffer" });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+
+        if (!worksheet) {
+          res.status(400).json({
+            error: "No se pudo leer ninguna hoja del archivo Excel/CSV.",
+          });
           return;
         }
 
-        // ✅ SE CORRIGE ESTRUCTURALMENTE: for...of en lugar de forEach también en el endpoint auto
-        for (const entity of result.document.entities) {
-          const type = entity.type;
-          const textValue =
-            entity.mentionText || entity.normalizedValue?.text || "";
-
-          if (type === "supplier_name") supplierName = textValue;
-          if (type === "supplier_tax_id") supplierNif = textValue;
-          if (type === "invoice_id") invoiceNumber = textValue;
-          if (type === "invoice_date") {
-            issueDate = entity.normalizedValue?.dateValue
-              ? `${entity.normalizedValue.dateValue.year}-${String(entity.normalizedValue.dateValue.month).padStart(2, "0")}-${String(entity.normalizedValue.dateValue.day).padStart(2, "0")}`
-              : textValue;
-          }
-
-          if (type === "line_item" && entity.properties) {
-            let line = {
-              description: textValue,
-              quantity: 1,
-              unitPrice: 0,
-              amount: 0,
-            };
-            entity.properties.forEach((prop) => {
-              const pType = prop.type;
-              const pText =
-                prop.mentionText || prop.normalizedValue?.text || "";
-              if (pType.includes("description")) line.description = pText;
-              if (pType.includes("quantity"))
-                line.quantity = parseSpanishNumber(pText) || 1;
-              if (pType.includes("unit_price"))
-                line.unitPrice = parseSpanishNumber(pText) || 0;
-              if (pType.includes("amount"))
-                line.amount = parseSpanishNumber(pText) || 0;
-            });
-            items.push(line);
-          }
-        }
-      } else {
-        // @ts-ignore
-        const workbook = XLSX.read(file.buffer, { type: "buffer" });
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         // @ts-ignore
         const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
         let isItemSection = false;
-        let descIdx = -1,
-          qtyIdx = -1,
-          priceIdx = -1;
+        let descIdx = -1;
+        let qtyIdx = -1;
+        let priceIdx = -1;
+        let amountIdx = -1;
 
         for (const rawRow of rows as any[]) {
-          if (!rawRow || !Array.isArray(rawRow) || rawRow.length === 0)
+          if (!rawRow || !Array.isArray(rawRow) || rawRow.length === 0) {
             continue;
+          }
+
           const cells = rawRow.map((cell) => String(cell || "").trim());
 
           for (let c = 0; c < cells.length; c++) {
             const cell = cells[c];
             if (!cell) continue;
+
             const lowerCell = cell.toLowerCase();
 
             const getValue = () => {
-              if (cell.includes(":"))
+              if (cell.includes(":")) {
                 return cell.split(":").slice(1).join(":").trim();
-              for (let i = c + 1; i < cells.length; i++)
-                if (cells[i] && cells[i].trim() !== "") return cells[i].trim();
+              }
+
+              for (let i = c + 1; i < cells.length; i++) {
+                if (cells[i] && cells[i].trim() !== "") {
+                  return cells[i].trim();
+                }
+              }
+
               return "";
             };
 
             if (
               (lowerCell.includes("proveedor") ||
-                lowerCell.includes("cliente")) &&
+                lowerCell.includes("cliente") ||
+                lowerCell.includes("empresa")) &&
               !supplierName
-            )
+            ) {
               supplierName = getValue();
+            }
+
             if (
-              (lowerCell.includes("nif") || lowerCell.includes("cif")) &&
+              (lowerCell.includes("nif") ||
+                lowerCell.includes("cif") ||
+                lowerCell.includes("tax id")) &&
               !supplierNif
-            )
+            ) {
               supplierNif = getValue();
+            }
+
             if (
-              lowerCell.includes("dirección") &&
+              (lowerCell.includes("dirección") ||
+                lowerCell.includes("direccion") ||
+                lowerCell.includes("address")) &&
               supplierAddress === "Pendiente"
-            )
+            ) {
               supplierAddress = getValue();
+            }
+
+            if (
+              (lowerCell.includes("factura") ||
+                lowerCell.includes("invoice")) &&
+              invoiceNumber.startsWith("AUTO-")
+            ) {
+              const value = getValue();
+              if (value) invoiceNumber = value;
+            }
+
+            if (
+              (lowerCell.includes("fecha") ||
+                lowerCell.includes("date")) &&
+              issueDate === new Date().toISOString().split("T")[0]
+            ) {
+              const value = getValue();
+              if (value) issueDate = value;
+            }
           }
 
           if (!isItemSection) {
             const lowerHeaders = cells.map((c) => c.toLowerCase());
-            if (
-              lowerHeaders.includes("descripción") ||
-              lowerHeaders.includes("artículo") ||
-              lowerHeaders.includes("código")
-            ) {
+
+            const possibleDescIdx = lowerHeaders.findIndex(
+              (c) =>
+                c.includes("descripción") ||
+                c.includes("descripcion") ||
+                c.includes("artículo") ||
+                c.includes("articulo") ||
+                c.includes("concepto") ||
+                c.includes("producto") ||
+                c.includes("código") ||
+                c.includes("codigo"),
+            );
+
+            if (possibleDescIdx !== -1) {
               isItemSection = true;
-              descIdx = lowerHeaders.findIndex(
-                (c) => c.includes("descripción") || c.includes("artículo"),
-              );
+
+              descIdx = possibleDescIdx;
+
               qtyIdx = lowerHeaders.findIndex(
-                (c) => c === "unidades" || c.includes("cant"),
+                (c) =>
+                  c === "unidades" ||
+                  c.includes("cantidad") ||
+                  c.includes("cant") ||
+                  c.includes("uds") ||
+                  c.includes("qty"),
               );
-              priceIdx = lowerHeaders.findIndex((c) => c.includes("precio"));
+
+              priceIdx = lowerHeaders.findIndex(
+                (c) =>
+                  c.includes("precio") ||
+                  c.includes("price") ||
+                  c.includes("unitario") ||
+                  c.includes("unit"),
+              );
+
+              amountIdx = lowerHeaders.findIndex(
+                (c) =>
+                  c.includes("importe") ||
+                  c.includes("total") ||
+                  c.includes("amount"),
+              );
+
               continue;
             }
           }
 
           if (isItemSection && descIdx !== -1 && cells[descIdx]) {
             const description = cells[descIdx];
-            if (
-              description.toLowerCase() === "descripción" ||
-              description === "undefined"
-            )
-              continue;
 
-            const quantity = qtyIdx !== -1 ? parseFloat(cells[qtyIdx]) || 1 : 1;
-            const priceWithTax =
-              priceIdx !== -1 ? parseFloat(cells[priceIdx]) || 0 : 0;
-            const baseUnitPrice = priceWithTax / 1.21;
+            if (
+              !description ||
+              description.toLowerCase() === "descripción" ||
+              description.toLowerCase() === "descripcion" ||
+              description.toLowerCase() === "concepto" ||
+              description === "undefined"
+            ) {
+              continue;
+            }
+
+            if (
+              description.toLowerCase().includes("subtotal") ||
+              description.toLowerCase().includes("base imponible") ||
+              description.toLowerCase().includes("iva") ||
+              description.toLowerCase().includes("total")
+            ) {
+              continue;
+            }
+
+            const quantity =
+              qtyIdx !== -1 ? toNumber(cells[qtyIdx], 1) || 1 : 1;
+
+            let unitPrice =
+              priceIdx !== -1 ? toNumber(cells[priceIdx], 0) : 0;
+
+            let amount =
+              amountIdx !== -1 ? toNumber(cells[amountIdx], 0) : 0;
+
+            if (!amount && unitPrice) {
+              amount = quantity * unitPrice;
+            }
+
+            if (!unitPrice && amount && quantity) {
+              unitPrice = amount / quantity;
+            }
 
             items.push({
               description,
               quantity,
-              unitPrice: baseUnitPrice,
-              amount: quantity * baseUnitPrice,
+              unitPrice,
+              amount,
             });
           }
         }
+
+        dueDate = issueDate;
       }
 
+      // ----------------------------------------------------------------------
+      // Fallback si no se detectan líneas
+      // ----------------------------------------------------------------------
       if (items.length === 0) {
+        const fallbackAmount =
+          extractedNetAmount && extractedNetAmount > 0
+            ? extractedNetAmount
+            : 0;
+
         items.push({
           description: "Concepto general extraído",
           quantity: 1,
-          unitPrice: 0,
-          amount: 0,
+          unitPrice: fallbackAmount,
+          amount: fallbackAmount,
         });
       }
 
+      // Normalizar líneas antes de guardar
+      items = items.map((item) => {
+        const quantity = toNumber(item.quantity, 1) || 1;
+        const unitPrice = toNumber(item.unitPrice, 0);
+        const amount =
+          toNumber(item.amount, 0) || quantity * unitPrice || 0;
+
+        return {
+          description: item.description || "Sin descripción",
+          quantity,
+          unitPrice,
+          amount,
+        };
+      });
+
+      // ----------------------------------------------------------------------
+      // Guardar factura en BD
+      // ----------------------------------------------------------------------
       const result = await db.transaction(async (tx) => {
         let finalSupplierId = null;
 
@@ -518,36 +865,71 @@ router.post(
                 companyId: parseInt(companyId),
                 name: supplierName,
                 taxId: supplierNif || "PENDIENTE",
-                address: supplierAddress,
+                address: supplierAddress || "Pendiente",
                 city: "Pendiente",
                 postalCode: "00000",
               })
               .returning();
+
             finalSupplierId = newSupplier.id;
           }
         }
 
-        const subtotal = items.reduce((acc, item) => acc + item.amount, 0);
-        const taxRate = 21;
-        const taxAmount = subtotal * (taxRate / 100);
-        const total = subtotal + taxAmount;
+        const calculatedSubtotal = items.reduce(
+          (acc, item) => acc + toNumber(item.amount, 0),
+          0,
+        );
+
+        const subtotal =
+          isPDF && extractedNetAmount !== null && extractedNetAmount > 0
+            ? extractedNetAmount
+            : calculatedSubtotal;
+
+        const taxRate =
+          isPDF && extractedTaxRate !== null
+            ? extractedTaxRate
+            : 21;
+
+        const taxAmount =
+          isPDF && extractedTaxAmount !== null && extractedTaxAmount > 0
+            ? extractedTaxAmount
+            : subtotal * (taxRate / 100);
+
+        const total =
+          isPDF && extractedTotalAmount !== null && extractedTotalAmount > 0
+            ? extractedTotalAmount
+            : subtotal + taxAmount;
 
         const [invoice] = await tx
           .insert(vendorInvoicesTable)
           .values({
             companyId: parseInt(companyId),
             supplierId: finalSupplierId,
-            invoiceNumber: invoiceNumber,
+            invoiceNumber,
             status: "borrador",
-            issueDate: issueDate,
-            dueDate: issueDate,
-            description: `Documento procesado automáticamente (${isPDF ? "IA" : "Excel"})`,
+            issueDate,
+            dueDate,
+            description: `Documento procesado automáticamente (${
+              isPDF ? "OpenAI PDF Parser" : "XLSX Parser"
+            })`,
             subtotal: subtotal.toFixed(2),
             taxRate: taxRate.toString(),
             taxAmount: taxAmount.toFixed(2),
             total: total.toFixed(2),
             extractedData: {
-              source: isPDF ? "Google Document AI" : "XLSX Parser",
+              source: isPDF ? "OpenAI Responses API" : "XLSX Parser",
+              originalFileName: file.originalname,
+              mimeType: file.mimetype,
+              supplierName,
+              supplierNif,
+              supplierAddress,
+              invoiceNumber,
+              issueDate,
+              dueDate,
+              subtotal,
+              taxRate,
+              taxAmount,
+              total,
             },
           })
           .returning();
@@ -555,28 +937,43 @@ router.post(
         const itemsToInsert = items.map((item) => ({
           vendorInvoiceId: invoice.id,
           description: item.description || "Sin descripción",
-          quantity: (item.quantity || 1).toString(),
-          unitPrice: (item.unitPrice || 0).toFixed(6),
-          amount: (item.amount || 0).toFixed(6),
+          quantity: toNumber(item.quantity, 1).toString(),
+          unitPrice: toNumber(item.unitPrice, 0).toFixed(6),
+          amount: toNumber(item.amount, 0).toFixed(6),
         }));
 
         await tx.insert(vendorInvoiceItemsTable).values(itemsToInsert);
 
-        return { invoiceId: invoice.id, supplierId: finalSupplierId };
+        return {
+          invoiceId: invoice.id,
+          supplierId: finalSupplierId,
+        };
       });
 
       console.log(
         `✅ [OPENCLAW-AUTO] Factura recibida creada exitosamente. ID: ${result.invoiceId}`,
       );
-      res.status(201).json({ success: true, invoiceId: result.invoiceId });
+
+      res.status(201).json({
+        success: true,
+        invoiceId: result.invoiceId,
+        supplierId: result.supplierId,
+      });
     } catch (error: any) {
       console.error(
         "❌ [OPENCLAW-AUTO] Error general procesando archivo:",
         error,
       );
-      res
-        .status(500)
-        .json({ error: "Fallo al procesar automáticamente el archivo." });
+
+      res.status(500).json({
+        error:
+          error.message ||
+          "Fallo al procesar automáticamente el archivo.",
+      });
+    } finally {
+      if (openAiFile?.id) {
+        await deleteOpenAIFileSafely(openAiFile.id);
+      }
     }
   },
 );
@@ -797,11 +1194,9 @@ router.get("/vendor-invoices/pdf/:id", async (req, res): Promise<void> => {
 
     // Validamos que exista el registro y que contenga un nombre de archivo en tu columna nativa 'fileUrl'
     if (!invoice || !invoice.fileUrl) {
-      res
-        .status(404)
-        .json({
-          error: "Esta factura no tiene un archivo PDF original asociado",
-        });
+      res.status(404).json({
+        error: "Esta factura no tiene un archivo PDF original asociado",
+      });
       return;
     }
 
@@ -815,11 +1210,9 @@ router.get("/vendor-invoices/pdf/:id", async (req, res): Promise<void> => {
 
     // Comprobamos si el archivo físico realmente existe en el disco duro
     if (!fs.existsSync(filePath)) {
-      res
-        .status(404)
-        .json({
-          error: "El archivo físico no existe en el servidor o ha sido movido",
-        });
+      res.status(404).json({
+        error: "El archivo físico no existe en el servidor o ha sido movido",
+      });
       return;
     }
 
