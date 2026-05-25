@@ -19,6 +19,8 @@ import {
 } from "@workspace/api-zod";
 import multer from "multer";
 import { DocumentProcessorServiceClient } from "@google-cloud/documentai";
+import path from "path";
+import fs from "fs";
 
 const router: IRouter = Router();
 
@@ -26,7 +28,22 @@ const router: IRouter = Router();
 // 1. ENDPOINT DE IA: PROCESAR PDF CON GOOGLE DOCUMENT AI
 // ============================================================================
 
-const upload = multer({ storage: multer.memoryStorage() });
+const UPLOADS_DIR = path.join(process.cwd(), "uploads", "vendor_invoices");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOADS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({ storage: storage });
 
 // 🚨 INYECCIÓN SEGURA DE CREDENCIALES DESDE MEMORIA 🚨
 let docAiConfig: any = {
@@ -100,11 +117,14 @@ router.post(
         return;
       }
 
+      // Leemos el buffer desde la ruta del disco donde Multer acaba de descargar el documento
+      const fileBuffer = fs.readFileSync(file.path);
+
       const name = `projects/${projectId}/locations/${location}/processors/${processorId}`;
       const [result] = await docAiClient.processDocument({
         name,
         rawDocument: {
-          content: file.buffer.toString("base64"),
+          content: fileBuffer.toString("base64"),
           mimeType: file.mimetype,
         },
       });
@@ -264,7 +284,15 @@ router.post(
         }
       }
 
-      res.json({ success: true, parsedData: { ...extractedData, supplierId } });
+      // Devolvemos el nombre del archivo generado ('file.filename') para que el front lo almacene en el siguiente paso
+      res.json({
+        success: true,
+        parsedData: {
+          ...extractedData,
+          supplierId,
+          pdfPath: file.filename,
+        },
+      });
     } catch (error: any) {
       res.status(500).json({
         error: error.message || "Error interno al procesar el documento.",
@@ -604,7 +632,7 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
   console.log("💾 [BACKEND] Petición POST para GUARDAR factura");
 
   try {
-    const { extractedData, lineItems, ...bodyData } = req.body;
+    const { extractedData, lineItems, pdfPath, ...bodyData } = req.body;
     const parsed = CreateVendorInvoiceBody.safeParse(bodyData);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.message });
@@ -629,7 +657,11 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
           taxRate: data.taxRate || "21",
           taxAmount: req.body.taxAmount?.toString() || "0",
           total: req.body.total?.toString() || "0",
-          extractedData: extractedData ? extractedData : null,
+          fileUrl: pdfPath || req.body.pdfPath || null,
+          // Guardamos las propiedades de los campos del OCR mezclándolo o iniciando el JSON con la ruta física del PDF
+          extractedData: extractedData
+            ? { ...extractedData, pdfPath: pdfPath || req.body.pdfPath }
+            : { pdfPath: pdfPath || req.body.pdfPath },
         })
         .returning();
 
@@ -745,6 +777,61 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
     res
       .status(500)
       .json({ error: error.message || "Error eliminando factura" });
+  }
+});
+
+router.get("/vendor-invoices/pdf/:id", async (req, res): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "ID inválido" });
+      return;
+    }
+
+    // Buscamos el registro de la factura recibida en la base de datos
+    const [invoice] = await db
+      .select()
+      .from(vendorInvoicesTable)
+      .where(eq(vendorInvoicesTable.id, id))
+      .limit(1);
+
+    // Validamos que exista el registro y que contenga un nombre de archivo en tu columna nativa 'fileUrl'
+    if (!invoice || !invoice.fileUrl) {
+      res
+        .status(404)
+        .json({
+          error: "Esta factura no tiene un archivo PDF original asociado",
+        });
+      return;
+    }
+
+    // Construimos la ruta absoluta hacia el archivo guardado en el servidor usando tu columna 'fileUrl'
+    const filePath = path.join(
+      process.cwd(),
+      "uploads",
+      "vendor_invoices",
+      invoice.fileUrl,
+    );
+
+    // Comprobamos si el archivo físico realmente existe en el disco duro
+    if (!fs.existsSync(filePath)) {
+      res
+        .status(404)
+        .json({
+          error: "El archivo físico no existe en el servidor o ha sido movido",
+        });
+      return;
+    }
+
+    // Definimos las cabeceras HTTP correctas para decirle al navegador que es un documento PDF binario
+    res.setHeader("Content-Type", "application/pdf");
+
+    // Enviamos el stream binario del archivo directamente al iframe del frontend
+    res.sendFile(filePath);
+  } catch (error: any) {
+    res
+      .status(500)
+      .json({ error: error.message || "Error al recuperar el archivo PDF" });
   }
 });
 

@@ -50,3 +50,6 @@ Thumbs.db
 
 # Google key
 ocr-formularios-*.json
+
+# files
+artifacts/api-server/uploads

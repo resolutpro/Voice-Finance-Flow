@@ -46,7 +46,7 @@ import {
   Search,
   ChevronsUpDown,
   Upload,
-} from "lucide-react"; // Añadido Search y ChevronsUpDown
+} from "lucide-react";
 import * as XLSX from "xlsx";
 
 // Diccionario de traducción de campos de Google Document AI
@@ -163,7 +163,6 @@ export default function InvoicesPage() {
     const options: any[] = [];
 
     products.forEach((p: any) => {
-      // 1. Añadimos el producto con su precio base
       options.push({
         id: `base_${p.id}`,
         displayName: `${p.name} (Base: ${p.price}€)`,
@@ -172,7 +171,6 @@ export default function InvoicesPage() {
         taxRate: p.taxRate,
       });
 
-      // 2. Si tiene diferentes tarifas (Caja, Pallet...), las añadimos también
       if (p.priceTiers && Array.isArray(p.priceTiers)) {
         p.priceTiers.forEach((tier: any, tIdx: number) => {
           options.push({
@@ -188,7 +186,6 @@ export default function InvoicesPage() {
     return options;
   }, [products]);
 
-  // Estado para saber qué menú de buscador está abierto en las líneas de factura
   const [openProductSearch, setOpenProductSearch] = useState<number | null>(
     null,
   );
@@ -241,7 +238,6 @@ export default function InvoicesPage() {
     }
   }, [companyId]);
 
-  // Se ejecuta al entrar a la página
   useEffect(() => {
     fetchAllInvoices();
   }, [fetchAllInvoices]);
@@ -253,12 +249,11 @@ export default function InvoicesPage() {
       try {
         const parsedDraft = JSON.parse(draft);
 
-        // Abre el modal principal seteando los datos que sacó la IA
         setEditingInvoice({
           isNew: true,
           type: parsedDraft.type === "quote" ? "quote" : "invoice",
           status: "borrador",
-          invoiceNumber: "", // Se autogenerará en el backend
+          invoiceNumber: "",
           clientId: parsedDraft.clientId
             ? Number(parsedDraft.clientId)
             : undefined,
@@ -278,12 +273,10 @@ export default function InvoicesPage() {
               : [{ description: "Nueva línea", quantity: "1", unitPrice: "0" }],
         });
 
-        // Cambia la pestaña de fondo automáticamente (Presupuestos o Emitidas)
         setActiveTab(
           parsedDraft.type === "quote" ? "presupuestos" : "emitidas",
         );
 
-        // Limpiamos la memoria para que no vuelva a saltar si refrescas la página
         sessionStorage.removeItem("voice_draft_invoice");
       } catch (e) {
         console.error("Error cargando borrador de voz:", e);
@@ -291,12 +284,10 @@ export default function InvoicesPage() {
     }
   }, []);
 
-  // Efecto para cuando navegamos hacia esta página
   useEffect(() => {
     loadVoiceDraft();
   }, [loadVoiceDraft]);
 
-  // Efecto para cuando ya estamos en la página de facturas y usamos la voz
   useEffect(() => {
     window.addEventListener("voice_draft_ready", loadVoiceDraft);
     return () =>
@@ -320,7 +311,6 @@ export default function InvoicesPage() {
       return;
     }
 
-    // Filtrar para asegurarnos de procesar solo PDFs
     const pdfFiles = Array.from(files).filter(
       (f) => f.type === "application/pdf",
     );
@@ -337,7 +327,7 @@ export default function InvoicesPage() {
 
     setIsUploading(true);
 
-    // CASO A: SUBIDA INDIVIDUAL (Mantener comportamiento original con modal de revisión)
+    // CASO A: SUBIDA INDIVIDUAL
     if (pdfFiles.length === 1) {
       const formData = new FormData();
       formData.append("file", pdfFiles[0]);
@@ -373,7 +363,7 @@ export default function InvoicesPage() {
       return;
     }
 
-    // CASO B: SUBIDA EN MASA (Procesamiento y guardado automático como borrador)
+    // CASO B: SUBIDA EN MASA
     toast({
       title: "Procesando subida masiva",
       description: `Se están analizando ${pdfFiles.length} facturas con IA. Esto puede tardar unos momentos...`,
@@ -390,7 +380,6 @@ export default function InvoicesPage() {
       formData.append("companyId", companyId.toString());
 
       try {
-        // 1. Mandar a la IA
         const parseRes = await fetch("/api/vendor-invoices/parse", {
           method: "POST",
           body: formData,
@@ -404,7 +393,6 @@ export default function InvoicesPage() {
 
         const pData = parseData.parsedData;
 
-        // 2. Guardar automáticamente como "Borrador"
         const payload = {
           companyId: companyId,
           supplierId: pData.supplierId,
@@ -416,13 +404,14 @@ export default function InvoicesPage() {
           total: pData.totalAmount?.toString() || "0",
           extractedData: pData.allExtractedFields,
           lineItems: pData.lineItems,
-          status: "borrador", // Importante: Se guarda como borrador para forzar revisión visual en la tabla
+          status: "borrador",
+          pdfPath: pData.pdfPath, // Vinculamos la ruta del disco devuelta por la API
         };
 
         const saveRes = await fetch("/api/vendor-invoices", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
+          headers: { "Content-Type": "application/json" },
         });
 
         if (saveRes.ok) {
@@ -438,7 +427,6 @@ export default function InvoicesPage() {
       }
     }
 
-    // Actualizar tabla con todas las nuevas facturas de golpe
     if (newInvoicesList.length > 0) {
       setVendorInvoices((prev) => [...newInvoicesList, ...prev]);
     }
@@ -544,6 +532,7 @@ export default function InvoicesPage() {
         extractedData: parsedData.allExtractedFields,
         lineItems: parsedData.lineItems,
         status: "pendiente_pago",
+        pdfPath: parsedData.pdfPath, // Propagamos la referencia del PDF físico al confirmar individualmente
       };
 
       const response = await fetch("/api/vendor-invoices", {
@@ -616,14 +605,13 @@ export default function InvoicesPage() {
         description: "Selecciona una empresa.",
         variant: "destructive",
       });
-
       return;
     }
     setEditingInvoice({
-      isNew: true, // FLAG PARA SABER QUE HAY QUE HACER POST Y NO PATCH
+      isNew: true,
       type: docType,
       status: "borrador",
-      invoiceNumber: "", // Se autogenerará en el backend
+      invoiceNumber: "",
       clientName: "",
       issueDate: new Date().toISOString().split("T")[0],
       concept: "",
@@ -632,7 +620,6 @@ export default function InvoicesPage() {
     });
   };
 
-  // === LÓGICA PARA PARSEAR ALBARÁN EXCEL/CSV (FRONTEND) ===
   // === LÓGICA PARA PARSEAR ALBARÁN EXCEL/CSV EN MASA ===
   const handleUploadAlbaran = async (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -659,7 +646,6 @@ export default function InvoicesPage() {
     let successCount = 0;
     let errorCount = 0;
 
-    // Procesamos cada archivo uno por uno
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       try {
@@ -688,7 +674,6 @@ export default function InvoicesPage() {
 
           const cells = rawRow.map((cell) => String(cell || "").trim());
 
-          // 1. EXTRAER DATOS DEL CLIENTE
           for (let c = 0; c < cells.length; c++) {
             const cell = cells[c];
             if (!cell) continue;
@@ -745,7 +730,6 @@ export default function InvoicesPage() {
             }
           }
 
-          // 2. DETECTAR DÓNDE EMPIEZA LA TABLA DE PRODUCTOS
           if (!isItemSection) {
             const lowerCellsForHeaders = cells.map((c) => c.toLowerCase());
             if (
@@ -768,14 +752,14 @@ export default function InvoicesPage() {
             }
           }
 
-          // 3. EXTRAER LAS LÍNEAS DE PRODUCTOS
           if (isItemSection && descIdx !== -1 && cells[descIdx]) {
             const description = cells[descIdx];
 
             if (
               description.toLowerCase() === "descripción" ||
               description === "undefined" ||
-              description === "null"
+              description === "null" ||
+              description === "total"
             )
               continue;
 
@@ -795,7 +779,6 @@ export default function InvoicesPage() {
         if (items.length > 0) {
           let finalClientId = undefined;
 
-          // 4. BUSCAR O CREAR EL CLIENTE
           if (clientName || clientNif) {
             const matchedClient = clients?.find(
               (c: any) =>
@@ -857,7 +840,6 @@ export default function InvoicesPage() {
             }
           }
 
-          // 5. GUARDAR LA FACTURA COMO BORRADOR DIRECTAMENTE EN LA BD
           const invoicePayload = {
             companyId: companyId,
             clientId: finalClientId,
@@ -882,7 +864,7 @@ export default function InvoicesPage() {
             errorCount++;
           }
         } else {
-          errorCount++; // No se encontraron items
+          errorCount++;
         }
       } catch (error) {
         console.error(`Error parseando archivo ${file.name}:`, error);
@@ -890,17 +872,17 @@ export default function InvoicesPage() {
       }
     }
 
-    // 6. NOTIFICAR RESULTADOS Y RECARGAR LA TABLA SUAVEMENTE
     toast({
       title: "Importación masiva finalizada",
       description: `Éxito: ${successCount} albaranes | Errores: ${errorCount}`,
       variant: errorCount > 0 && successCount === 0 ? "destructive" : "default",
     });
 
-    fetchAllInvoices(); // Recarga suave de la tabla
+    fetchAllInvoices();
     setIsUploading(false);
     if (event.target) event.target.value = "";
   };
+
   return (
     <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto">
       {/* HEADER CON BOTONES ALINEADOS A LA DERECHA */}
@@ -980,14 +962,12 @@ export default function InvoicesPage() {
 
           {activeTab === "recibidas" && (
             <>
-              {/* Input oculto para subir PDF */}
-              {/* Input oculto para subir PDF */}
               <input
                 type="file"
                 id="upload-pdf-input"
                 accept="application/pdf"
                 className="hidden"
-                multiple // <--- 1. AÑADE ESTO AQUÍ
+                multiple
                 onChange={handleFileUpload}
                 onClick={(e) => {
                   (e.target as HTMLInputElement).value = "";
@@ -1015,7 +995,6 @@ export default function InvoicesPage() {
                 ) : (
                   <UploadCloud className="w-4 h-4 mr-2" />
                 )}
-                {/* 2. CAMBIA EL TEXTO PARA QUE INDIQUE QUE PUEDEN SER VARIAS */}
                 {isUploading ? "Procesando IA..." : "Subir Factura(s) PDF"}
               </Button>
             </>
@@ -1451,112 +1430,117 @@ export default function InvoicesPage() {
         open={!!selectedVendorInvoice}
         onOpenChange={(open) => !open && setSelectedVendorInvoice(null)}
       >
-        <DialogContent className="sm:max-w-[550px] max-h-[85vh] flex flex-col p-0">
+        <DialogContent className="lg:max-w-[1250px] md:max-w-[85vw] sm:max-w-[550px] w-full max-h-[90vh] flex flex-col p-0 overflow-hidden">
           <DialogHeader className="px-6 pt-6 pb-2 border-b">
             <DialogTitle className="text-xl">Detalles del Gasto</DialogTitle>
           </DialogHeader>
 
           {selectedVendorInvoice && (
-            <div className="overflow-y-auto px-6 py-6 space-y-6">
-              <div className="grid grid-cols-2 gap-y-4 gap-x-4 text-sm bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/50">
-                <div>
-                  <span className="text-xs text-muted-foreground block mb-1">
-                    Proveedor
-                  </span>
-                  <span className="font-semibold text-blue-900 dark:text-blue-300">
-                    {selectedVendorInvoice.supplierName ||
-                      `Proveedor #${selectedVendorInvoice.supplierId}`}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground block mb-1">
-                    Nº Factura
-                  </span>
-                  <span className="font-medium">
-                    {selectedVendorInvoice.invoiceNumber || "S/N"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground block mb-1">
-                    Fecha Emisión
-                  </span>
-                  <span>
-                    {new Date(
-                      selectedVendorInvoice.issueDate,
-                    ).toLocaleDateString()}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground block mb-1">
-                    Total
-                  </span>
-                  <span className="font-bold text-lg">
-                    {Number(selectedVendorInvoice.total).toLocaleString(
-                      "es-ES",
-                      { style: "currency", currency: "EUR" },
-                    )}
-                  </span>
-                </div>
-              </div>
-
-              {selectedVendorInvoice.lineItems &&
-                selectedVendorInvoice.lineItems.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">
-                      Conceptos de la Factura
-                    </Label>
-                    <div className="rounded-md border bg-card overflow-hidden">
-                      <Table className="text-xs">
-                        <TableHeader className="bg-muted/30">
-                          <TableRow>
-                            <TableHead className="py-2 h-8">
-                              Descripción
-                            </TableHead>
-                            <TableHead className="py-2 h-8 text-right">
-                              Cant.
-                            </TableHead>
-                            <TableHead className="py-2 h-8 text-right">
-                              Precio
-                            </TableHead>
-                            <TableHead className="py-2 h-8 text-right">
-                              Importe
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {selectedVendorInvoice.lineItems.map(
-                            (line: any, idx: number) => (
-                              <TableRow key={idx}>
-                                <TableCell className="py-2 font-medium">
-                                  {line.description}
-                                </TableCell>
-                                <TableCell className="py-2 text-right">
-                                  {line.quantity}
-                                </TableCell>
-                                <TableCell className="py-2 text-right">
-                                  {line.unitPrice} €
-                                </TableCell>
-                                <TableCell className="py-2 text-right font-semibold">
-                                  {line.amount} €
-                                </TableCell>
-                              </TableRow>
-                            ),
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 flex-1 min-h-0 overflow-hidden">
+              {/* COLUMNA IZQUIERDA: Datos del Gasto */}
+              <div className="overflow-y-auto px-6 py-6 space-y-6 max-h-[calc(90vh-140px)] border-b lg:border-b-0 lg:border-r">
+                <div className="grid grid-cols-2 gap-y-4 gap-x-4 text-sm bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/50">
+                  <div>
+                    <span className="text-xs text-muted-foreground block mb-1">
+                      Proveedor
+                    </span>
+                    <span className="font-semibold text-blue-900 dark:text-blue-300">
+                      {selectedVendorInvoice.supplierName ||
+                        `Proveedor #${selectedVendorInvoice.supplierId}`}
+                    </span>
                   </div>
-                )}
+                  <div>
+                    <span className="text-xs text-muted-foreground block mb-1">
+                      Nº Factura
+                    </span>
+                    <span className="font-medium">
+                      {selectedVendorInvoice.invoiceNumber || "S/N"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground block mb-1">
+                      Fecha Emisión
+                    </span>
+                    <span>
+                      {new Date(
+                        selectedVendorInvoice.issueDate,
+                      ).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground block mb-1">
+                      Total
+                    </span>
+                    <span className="font-bold text-lg">
+                      {Number(selectedVendorInvoice.total).toLocaleString(
+                        "es-ES",
+                        { style: "currency", currency: "EUR" },
+                      )}
+                    </span>
+                  </div>
+                </div>
 
-              {selectedVendorInvoice.extractedData &&
-                Object.keys(selectedVendorInvoice.extractedData).length > 0 && (
-                  <div className="space-y-2 border-t pt-4 mt-4">
-                    <Label className="text-sm font-semibold block mb-2">
-                      Información Adicional (OCR)
-                    </Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {Object.entries(selectedVendorInvoice.extractedData).map(
-                        ([key, value]) => {
+                {selectedVendorInvoice.lineItems &&
+                  selectedVendorInvoice.lineItems.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold">
+                        Conceptos de la Factura
+                      </Label>
+                      <div className="rounded-md border bg-card overflow-hidden">
+                        <Table className="text-xs">
+                          <TableHeader className="bg-muted/30">
+                            <TableRow>
+                              <TableHead className="py-2 h-8">
+                                Descripción
+                              </TableHead>
+                              <TableHead className="py-2 h-8 text-right">
+                                Cant.
+                              </TableHead>
+                              <TableHead className="py-2 h-8 text-right">
+                                Precio
+                              </TableHead>
+                              <TableHead className="py-2 h-8 text-right">
+                                Importe
+                              </TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {selectedVendorInvoice.lineItems.map(
+                              (line: any, idx: number) => (
+                                <TableRow key={idx}>
+                                  <TableCell className="py-2 font-medium">
+                                    {line.description}
+                                  </TableCell>
+                                  <TableCell className="py-2 text-right">
+                                    {line.quantity}
+                                  </TableCell>
+                                  <TableCell className="py-2 text-right">
+                                    {line.unitPrice} €
+                                  </TableCell>
+                                  <TableCell className="py-2 text-right font-semibold">
+                                    {line.amount} €
+                                  </TableCell>
+                                </TableRow>
+                              ),
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+
+                {selectedVendorInvoice.extractedData &&
+                  Object.keys(selectedVendorInvoice.extractedData).length >
+                    0 && (
+                    <div className="space-y-2 border-t pt-4 mt-4">
+                      <Label className="text-sm font-semibold block mb-2">
+                        Información Adicional (OCR)
+                      </Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {Object.entries(
+                          selectedVendorInvoice.extractedData,
+                        ).map(([key, value]) => {
+                          if (key === "pdfPath") return null;
                           const displayValue = Array.isArray(value)
                             ? value.join(" | ")
                             : String(value);
@@ -1577,81 +1561,101 @@ export default function InvoicesPage() {
                               </span>
                             </div>
                           );
-                        },
-                      )}
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )}
-
-              <div className="space-y-2 border-t pt-4 mt-4">
-                <Label className="text-sm font-semibold">
-                  Estado de la Factura
-                </Label>
-                <div className="flex gap-2 items-center">
-                  <select
-                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={selectedVendorInvoice.status}
-                    onChange={(e) =>
-                      handleUpdateVendorInvoiceStatus(
-                        selectedVendorInvoice.id,
-                        e.target.value,
-                      )
-                    }
-                    disabled={isUpdatingStatus}
-                  >
-                    <option value="borrador">Borrador</option>
-                    <option value="pendiente_pago">Pendiente de Pago</option>
-                    <option value="parcialmente_pagada">
-                      Parcialmente Pagada
-                    </option>
-                    <option value="pagada">Pagada</option>
-                    <option value="vencida">Vencida</option>
-                    <option value="anulada">Anulada</option>
-                  </select>
-                  {isUpdatingStatus && (
-                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
                   )}
+
+                <div className="space-y-2 border-t pt-4 mt-4">
+                  <Label className="text-sm font-semibold">
+                    Estado de la Factura
+                  </Label>
+                  <div className="flex gap-2 items-center">
+                    <select
+                      className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={selectedVendorInvoice.status}
+                      onChange={(e) =>
+                        handleUpdateVendorInvoiceStatus(
+                          selectedVendorInvoice.id,
+                          e.target.value,
+                        )
+                      }
+                      disabled={isUpdatingStatus}
+                    >
+                      <option value="borrador">Borrador</option>
+                      <option value="pendiente_pago">Pendiente de Pago</option>
+                      <option value="parcialmente_pagada">
+                        Parcialmente Pagada
+                      </option>
+                      <option value="pagada">Pagada</option>
+                      <option value="vencida">Vencida</option>
+                      <option value="anulada">Anulada</option>
+                    </select>
+                    {isUpdatingStatus && (
+                      <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <DialogFooter className="flex flex-col sm:flex-row sm:justify-between items-center mt-6 pt-4 border-t gap-4">
-                <div className="flex gap-2 w-full sm:w-auto">
-                  <Button
-                    variant="destructive"
-                    onClick={async () => {
-                      if (
-                        confirm(
-                          "¿Estás seguro de borrar esta factura de forma permanente?",
-                        )
-                      ) {
-                        try {
-                          await fetch(
-                            `/api/vendor-invoices/${selectedVendorInvoice.id}`,
-                            {
-                              method: "DELETE",
-                            },
-                          );
-                          toast({ title: "Factura eliminada" });
-                          setSelectedVendorInvoice(null);
-                          fetchAllInvoices(); // <-- CAMBIA EL loadVendorInvoices() POR ESTO
-                        } catch (e) {
-                          toast({
-                            title: "Error al borrar",
-                            variant: "destructive",
-                          });
-                        }
-                      }
-                    }}
-                  >
-                    Borrar
-                  </Button>
-                </div>
-                <Button onClick={() => setSelectedVendorInvoice(null)}>
-                  Cerrar
-                </Button>
-              </DialogFooter>
+              {/* COLUMNA DERECHA: Visualizador del PDF Original */}
+              <div className="w-full h-full bg-zinc-100 dark:bg-zinc-900 flex flex-col items-center justify-center min-h-[350px] lg:min-h-0">
+                {/* 👇 Ahora valida directamente contra tu campo fileUrl de la BD */}
+                {selectedVendorInvoice.fileUrl ? (
+                  <iframe
+                    src={`/api/vendor-invoices/pdf/${selectedVendorInvoice.id}#navpanes=0&toolbar=0`}
+                    className="w-full h-full border-0 min-h-[350px] lg:h-[calc(90vh-75px)]"
+                    title="Vista previa del PDF original"
+                  />
+                ) : (
+                  <div className="text-center p-6 text-muted-foreground">
+                    <FileText className="w-10 h-10 mx-auto mb-2 text-zinc-400" />
+                    <p className="text-xs">
+                      Esta factura se creó manualmente y no dispone de archivo
+                      PDF original.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
+
+          <DialogFooter className="flex flex-col sm:flex-row sm:justify-between items-center px-6 py-4 border-t bg-gray-50 dark:bg-zinc-900/20 gap-4">
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button
+                variant="destructive"
+                onClick={async () => {
+                  if (
+                    confirm(
+                      "¿Estás seguro de borrar esta factura de forma permanente?",
+                    )
+                  ) {
+                    try {
+                      await fetch(
+                        `/api/vendor-invoices/${selectedVendorInvoice.id}`,
+                        {
+                          method: "DELETE",
+                        },
+                      );
+                      toast({ title: "Factura eliminada" });
+                      setSelectedVendorInvoice(null);
+                      fetchAllInvoices();
+                    } catch (e) {
+                      toast({
+                        title: "Error al borrar",
+                        variant: "destructive",
+                      });
+                    }
+                  }
+                }}
+              >
+                Borrar
+              </Button>
+            </div>
+            <Button onClick={() => setSelectedVendorInvoice(null)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1664,8 +1668,10 @@ export default function InvoicesPage() {
           if (!open) setEditingInvoice(null);
         }}
       >
-        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent
+          className={`${editingInvoice && !editingInvoice.isNew ? "lg:max-w-[1250px] md:max-w-[85vw]" : "sm:max-w-[750px]"} w-full max-h-[90vh] flex flex-col p-0 overflow-hidden`}
+        >
+          <DialogHeader className="px-6 pt-6 pb-2 border-b">
             <DialogTitle className="text-xl">
               {editingInvoice?.isNew
                 ? editingInvoice?.type === "quote"
@@ -1686,7 +1692,6 @@ export default function InvoicesPage() {
 
           {editingInvoice &&
             (() => {
-              // Buscamos el estado ORIGINAL en la lista, no el que estamos editando en el desplegable
               const originalInvoice = invoices.find(
                 (inv) => inv.id === editingInvoice.id,
               );
@@ -1700,420 +1705,450 @@ export default function InvoicesPage() {
                 originalStatus !== "borrador";
 
               return (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-2 gap-4 bg-muted/30 p-4 rounded-lg border">
-                    <div className="flex flex-col gap-1">
-                      <Label className="text-xs text-muted-foreground">
-                        Cliente
-                      </Label>
-                      <div className="flex gap-2">
-                        <select
-                          disabled={isReadonly}
-                          className="flex h-10 w-1/2 items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
-                          value={editingInvoice.clientId || ""}
-                          onChange={(e) => {
-                            const selectedId = e.target.value
-                              ? Number(e.target.value)
-                              : undefined;
-                            const selectedClient = clients?.find(
-                              (c: any) => c.id === selectedId,
-                            );
-                            setEditingInvoice({
-                              ...editingInvoice,
-                              clientId: selectedId,
-                              clientName: selectedClient
-                                ? selectedClient.name
-                                : "",
-                            });
-                          }}
-                        >
-                          <option value="">-- Nuevo / Libre --</option>
-                          {clients?.map((client: any) => (
-                            <option key={client.id} value={client.id}>
-                              {client.name}
-                            </option>
-                          ))}
-                        </select>
+                <div
+                  className={`grid grid-cols-1 ${!editingInvoice.isNew ? "lg:grid-cols-2" : ""} flex-1 min-h-0 overflow-hidden`}
+                >
+                  {/* COLUMNA FORMULARIO */}
+                  <div className="overflow-y-auto px-6 py-6 space-y-6 max-h-[calc(90vh-140px)] min-h-0 border-b lg:border-b-0 lg:border-r">
+                    <div className="grid grid-cols-2 gap-4 bg-muted/30 p-4 rounded-lg border">
+                      <div className="flex flex-col gap-1">
+                        <Label className="text-xs text-muted-foreground">
+                          Cliente
+                        </Label>
+                        <div className="flex gap-2">
+                          <select
+                            disabled={isReadonly}
+                            className="flex h-10 w-1/2 items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
+                            value={editingInvoice.clientId || ""}
+                            onChange={(e) => {
+                              const selectedId = e.target.value
+                                ? Number(e.target.value)
+                                : undefined;
+                              const selectedClient = clients?.find(
+                                (c: any) => c.id === selectedId,
+                              );
+                              setEditingInvoice({
+                                ...editingInvoice,
+                                clientId: selectedId,
+                                clientName: selectedClient
+                                  ? selectedClient.name
+                                  : "",
+                              });
+                            }}
+                          >
+                            <option value="">-- Nuevo / Libre --</option>
+                            {clients?.map((client: any) => (
+                              <option key={client.id} value={client.id}>
+                                {client.name}
+                              </option>
+                            ))}
+                          </select>
+                          <Input
+                            disabled={isReadonly || !!editingInvoice.clientId}
+                            value={editingInvoice.clientName || ""}
+                            onChange={(e) =>
+                              setEditingInvoice({
+                                ...editingInvoice,
+                                clientName: e.target.value,
+                              })
+                            }
+                            className="w-1/2 disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
+                            placeholder="Escribe el nombre..."
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">
+                          Fecha de Emisión
+                        </Label>
                         <Input
-                          disabled={isReadonly || !!editingInvoice.clientId}
-                          value={editingInvoice.clientName || ""}
+                          type="date"
+                          disabled={isReadonly}
+                          value={editingInvoice.issueDate?.split("T")[0] || ""}
                           onChange={(e) =>
                             setEditingInvoice({
                               ...editingInvoice,
-                              clientName: e.target.value,
+                              issueDate: e.target.value,
                             })
                           }
-                          className="w-1/2 disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
-                          placeholder="Escribe el nombre..."
+                          className="mt-1 disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
                         />
                       </div>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-muted-foreground">
-                        Fecha de Emisión
-                      </Label>
-                      <Input
-                        type="date"
-                        disabled={isReadonly}
-                        value={editingInvoice.issueDate?.split("T")[0] || ""}
-                        onChange={(e) =>
-                          setEditingInvoice({
-                            ...editingInvoice,
-                            issueDate: e.target.value,
-                          })
-                        }
-                        className="mt-1 disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs text-muted-foreground">
-                        Concepto General
-                      </Label>
-                      <Input
-                        disabled={isReadonly}
-                        value={editingInvoice.concept || ""}
-                        onChange={(e) =>
-                          setEditingInvoice({
-                            ...editingInvoice,
-                            concept: e.target.value,
-                          })
-                        }
-                        className="mt-1 disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
-                        placeholder="Ej. Servicios prestados"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs text-muted-foreground">
-                        Estado
-                      </Label>
-                      <select
-                        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm mt-1 disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
-                        value={
-                          editingInvoice.type === "invoice"
-                            ? editingInvoice.status
-                            : editingInvoice.type === "quote" &&
-                                editingInvoice.status !== "borrador"
+                      <div>
+                        <Label className="text-xs text-muted-foreground">
+                          Concepto General
+                        </Label>
+                        <Input
+                          disabled={isReadonly}
+                          value={editingInvoice.concept || ""}
+                          onChange={(e) =>
+                            setEditingInvoice({
+                              ...editingInvoice,
+                              concept: e.target.value,
+                            })
+                          }
+                          className="mt-1 disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
+                          placeholder="Ej. Servicios prestados"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">
+                          Estado
+                        </Label>
+                        <select
+                          className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm mt-1 disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
+                          value={
+                            editingInvoice.type === "invoice"
                               ? editingInvoice.status
-                              : "borrador"
-                        }
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (
-                            editingInvoice.type === "quote" &&
-                            val === "convert_to_invoice"
-                          ) {
+                              : editingInvoice.type === "quote" &&
+                                  editingInvoice.status !== "borrador"
+                                ? editingInvoice.status
+                                : "borrador"
+                          }
+                          onChange={(e) => {
+                            const val = e.target.value;
                             if (
-                              confirm(
-                                "Al convertir a Factura, pasará a ser un documento de ventas y, una vez no sea borrador, no se podrá editar. ¿Continuar?",
-                              )
+                              editingInvoice.type === "quote" &&
+                              val === "convert_to_invoice"
                             ) {
+                              if (
+                                confirm(
+                                  "Al convertir a Factura, pasará a ser un documento de ventas y, una vez no sea borrador, no se podrá editar. ¿Continuar?",
+                                )
+                              ) {
+                                setEditingInvoice({
+                                  ...editingInvoice,
+                                  status: "convert_to_invoice",
+                                });
+                              }
+                            } else {
                               setEditingInvoice({
                                 ...editingInvoice,
-                                status: "convert_to_invoice",
+                                status: val,
                               });
                             }
-                          } else {
-                            setEditingInvoice({
-                              ...editingInvoice,
-                              status: val,
-                            });
-                          }
-                        }}
-                      >
-                        {editingInvoice.type === "invoice" ? (
-                          <>
-                            <option value="borrador">Borrador</option>
-                            <option value="emitida">Emitida</option>
-                            <option value="pendiente_cobro">
-                              Pendiente de Cobro
-                            </option>
-                            <option value="cobrada">Cobrada</option>
-                            <option value="vencida">Vencida</option>
-                            <option value="anulada">Anulada</option>
-                          </>
-                        ) : (
-                          <>
-                            <option value="borrador">
-                              Borrador (Presupuesto)
-                            </option>
-                            {/* Sólo mostramos "Convertir" si no es nuevo, o si es nuevo pero está bien formado */}
-                            <option
-                              value="convert_to_invoice"
-                              className="font-bold text-blue-600"
-                            >
-                              ➡️ Convertir a Factura
-                            </option>
-                          </>
-                        )}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <h4 className="font-semibold text-sm">
-                        Líneas del Documento
-                      </h4>
-                      {!isReadonly && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const newItems = [
-                              ...(editingInvoice.items || []),
-                              {
-                                description: "Nueva línea",
-                                quantity: "1",
-                                unitPrice: "0",
-                              },
-                            ];
-                            setEditingInvoice({
-                              ...editingInvoice,
-                              items: newItems,
-                            });
                           }}
                         >
-                          <Plus className="w-4 h-4 mr-2" /> Añadir Concepto
-                        </Button>
-                      )}
+                          {editingInvoice.type === "invoice" ? (
+                            <>
+                              <option value="borrador">Borrador</option>
+                              <option value="emitida">Emitida</option>
+                              <option value="pendiente_cobro">
+                                Pendiente de Cobro
+                              </option>
+                              <option value="cobrada">Cobrada</option>
+                              <option value="vencida">Vencida</option>
+                              <option value="anulada">Anulada</option>
+                            </>
+                          ) : (
+                            <>
+                              <option value="borrador">
+                                Borrador (Presupuesto)
+                              </option>
+                              <option
+                                value="convert_to_invoice"
+                                className="font-bold text-blue-600"
+                              >
+                                ➡️ Convertir a Factura
+                              </option>
+                            </>
+                          )}
+                        </select>
+                      </div>
                     </div>
 
-                    <Table className="border rounded-md">
-                      <TableHeader className="bg-muted/30">
-                        <TableRow>
-                          <TableHead>Descripción</TableHead>
-                          <TableHead className="w-24 text-right">
-                            Cant.
-                          </TableHead>
-                          <TableHead className="w-32 text-right">
-                            Precio Ud.
-                          </TableHead>
-                          {!isReadonly && (
-                            <TableHead className="w-10"></TableHead>
-                          )}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(editingInvoice.items || []).map(
-                          (item: any, idx: number) => (
-                            <TableRow key={idx}>
-                              <TableCell className="p-2">
-                                <Input
-                                  disabled={isReadonly}
-                                  className="disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
-                                  value={item.description}
-                                  onChange={(e) => {
-                                    const newItems = [...editingInvoice.items];
-                                    newItems[idx].description = e.target.value;
-                                    setEditingInvoice({
-                                      ...editingInvoice,
-                                      items: newItems,
-                                    });
-                                  }}
-                                />
-                              </TableCell>
-                              <TableCell className="p-2">
-                                <Input
-                                  type="number"
-                                  disabled={isReadonly}
-                                  className="text-right disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
-                                  value={item.quantity}
-                                  onChange={(e) => {
-                                    const newItems = [...editingInvoice.items];
-                                    newItems[idx].quantity = e.target.value;
-                                    setEditingInvoice({
-                                      ...editingInvoice,
-                                      items: newItems,
-                                    });
-                                  }}
-                                />
-                              </TableCell>
-                              <TableCell className="p-2 flex gap-2 items-center min-w-[450px]">
-                                <Popover
-                                  open={openProductSearch === idx}
-                                  onOpenChange={(isOpen) =>
-                                    setOpenProductSearch(isOpen ? idx : null)
-                                  }
-                                >
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      role="combobox"
-                                      aria-expanded={openProductSearch === idx}
-                                      className="w-[240px] justify-between px-3 bg-white dark:bg-zinc-950 font-normal shrink-0"
-                                      disabled={isReadonly}
-                                      title="Buscar en catálogo"
-                                    >
-                                      <Search className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
-                                      <span className="truncate flex-1 text-left text-muted-foreground">
-                                        Buscar producto...
-                                      </span>
-                                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent
-                                    className="w-[350px] p-0"
-                                    align="start"
-                                  >
-                                    <Command>
-                                      <CommandInput placeholder="Buscar por nombre o tarifa..." />
-                                      <CommandList>
-                                        <CommandEmpty>
-                                          No se encontraron productos.
-                                        </CommandEmpty>
-                                        <CommandGroup>
-                                          {productOptions.map((opt) => (
-                                            <CommandItem
-                                              key={opt.id}
-                                              value={opt.displayName} // Esto permite que el buscador filtre por este texto
-                                              onSelect={() => {
-                                                const newItems = [
-                                                  ...editingInvoice.items,
-                                                ];
-                                                newItems[idx].description =
-                                                  opt.description;
-                                                newItems[idx].unitPrice =
-                                                  opt.price;
-                                                setEditingInvoice({
-                                                  ...editingInvoice,
-                                                  items: newItems,
-                                                  taxRate:
-                                                    opt.taxRate ||
-                                                    editingInvoice.taxRate,
-                                                });
-                                                setOpenProductSearch(null); // Cierra el desplegable al elegir
-                                              }}
-                                            >
-                                              {opt.displayName}
-                                            </CommandItem>
-                                          ))}
-                                        </CommandGroup>
-                                      </CommandList>
-                                    </Command>
-                                  </PopoverContent>
-                                </Popover>
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <h4 className="font-semibold text-sm">
+                          Líneas del Documento
+                        </h4>
+                        {!isReadonly && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const newItems = [
+                                ...(editingInvoice.items || []),
+                                {
+                                  description: "Nueva línea",
+                                  quantity: "1",
+                                  unitPrice: "0",
+                                },
+                              ];
+                              setEditingInvoice({
+                                ...editingInvoice,
+                                items: newItems,
+                              });
+                            }}
+                          >
+                            <Plus className="w-4 h-4 mr-2" /> Añadir Concepto
+                          </Button>
+                        )}
+                      </div>
 
-                                <Input
-                                  disabled={isReadonly}
-                                  className="flex-1 disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
-                                  value={item.description}
-                                  placeholder="Concepto libre o modificado..."
-                                  onChange={(e) => {
-                                    const newItems = [...editingInvoice.items];
-                                    newItems[idx].description = e.target.value;
-                                    setEditingInvoice({
-                                      ...editingInvoice,
-                                      items: newItems,
-                                    });
-                                  }}
-                                />
-                              </TableCell>
-                              {!isReadonly && (
-                                <TableCell className="p-2 text-center">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                    onClick={() => {
-                                      const newItems =
-                                        editingInvoice.items.filter(
-                                          (_: any, i: number) => i !== idx,
-                                        );
+                      <Table className="border rounded-md">
+                        <TableHeader className="bg-muted/30">
+                          <TableRow>
+                            <TableHead>Descripción</TableHead>
+                            <TableHead className="w-24 text-right">
+                              Cant.
+                            </TableHead>
+                            <TableHead className="w-32 text-right">
+                              Precio Ud.
+                            </TableHead>
+                            {!isReadonly && (
+                              <TableHead className="w-10"></TableHead>
+                            )}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(editingInvoice.items || []).map(
+                            (item: any, idx: number) => (
+                              <TableRow key={idx}>
+                                <TableCell className="p-2">
+                                  <Input
+                                    disabled={isReadonly}
+                                    className="disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
+                                    value={item.description}
+                                    onChange={(e) => {
+                                      const newItems = [
+                                        ...editingInvoice.items,
+                                      ];
+                                      newItems[idx].description =
+                                        e.target.value;
                                       setEditingInvoice({
                                         ...editingInvoice,
                                         items: newItems,
                                       });
                                     }}
-                                  >
-                                    X
-                                  </Button>
+                                  />
                                 </TableCell>
-                              )}
-                            </TableRow>
-                          ),
-                        )}
-                      </TableBody>
-                    </Table>
+                                <TableCell className="p-2">
+                                  <Input
+                                    type="number"
+                                    disabled={isReadonly}
+                                    className="text-right disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
+                                    value={item.quantity}
+                                    onChange={(e) => {
+                                      const newItems = [
+                                        ...editingInvoice.items,
+                                      ];
+                                      newItems[idx].quantity = e.target.value;
+                                      setEditingInvoice({
+                                        ...editingInvoice,
+                                        items: newItems,
+                                      });
+                                    }}
+                                  />
+                                </TableCell>
+                                <TableCell className="p-2 flex gap-2 items-center min-w-[450px]">
+                                  <Popover
+                                    open={openProductSearch === idx}
+                                    onOpenChange={(isOpen) =>
+                                      setOpenProductSearch(isOpen ? idx : null)
+                                    }
+                                  >
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        aria-expanded={
+                                          openProductSearch === idx
+                                        }
+                                        className="w-[240px] justify-between px-3 bg-white dark:bg-zinc-950 font-normal shrink-0"
+                                        disabled={isReadonly}
+                                        title="Buscar en catálogo"
+                                      >
+                                        <Search className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
+                                        <span className="truncate flex-1 text-left text-muted-foreground">
+                                          Buscar producto...
+                                        </span>
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent
+                                      className="w-[350px] p-0"
+                                      align="start"
+                                    >
+                                      <Command>
+                                        <CommandInput placeholder="Buscar por nombre o tarifa..." />
+                                        <CommandList>
+                                          <CommandEmpty>
+                                            No se encontraron productos.
+                                          </CommandEmpty>
+                                          <CommandGroup>
+                                            {productOptions.map((opt) => (
+                                              <CommandItem
+                                                key={opt.id}
+                                                value={opt.displayName}
+                                                onSelect={() => {
+                                                  const newItems = [
+                                                    ...editingInvoice.items,
+                                                  ];
+                                                  newItems[idx].description =
+                                                    opt.description;
+                                                  newItems[idx].unitPrice =
+                                                    opt.price;
+                                                  setEditingInvoice({
+                                                    ...editingInvoice,
+                                                    items: newItems,
+                                                    taxRate:
+                                                      opt.taxRate ||
+                                                      editingInvoice.taxRate,
+                                                  });
+                                                  setOpenProductSearch(null);
+                                                }}
+                                              >
+                                                {opt.displayName}
+                                              </CommandItem>
+                                            ))}
+                                          </CommandGroup>
+                                        </CommandList>
+                                      </Command>
+                                    </PopoverContent>
+                                  </Popover>
+
+                                  <Input
+                                    disabled={isReadonly}
+                                    className="flex-1 disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
+                                    value={item.description}
+                                    placeholder="Concepto libre o modificado..."
+                                    onChange={(e) => {
+                                      const newItems = [
+                                        ...editingInvoice.items,
+                                      ];
+                                      newItems[idx].description =
+                                        e.target.value;
+                                      setEditingInvoice({
+                                        ...editingInvoice,
+                                        items: newItems,
+                                      });
+                                    }}
+                                  />
+                                </TableCell>
+                                {!isReadonly && (
+                                  <TableCell className="p-2 text-center">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                      onClick={() => {
+                                        const newItems =
+                                          editingInvoice.items.filter(
+                                            (_: any, i: number) => i !== idx,
+                                          );
+                                        setEditingInvoice({
+                                          ...editingInvoice,
+                                          items: newItems,
+                                        });
+                                      }}
+                                    >
+                                      X
+                                    </Button>
+                                  </TableCell>
+                                )}
+                              </TableRow>
+                            ),
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Cálculo dinámico de totales */}
+                    {(() => {
+                      const currentItems = editingInvoice.items || [];
+                      const calcSubtotal = currentItems.reduce(
+                        (acc: number, item: any) =>
+                          acc +
+                          Number(item.quantity || 0) *
+                            Number(item.unitPrice || 0),
+                        0,
+                      );
+
+                      const currentTaxRate =
+                        editingInvoice.taxRate !== undefined &&
+                        editingInvoice.taxRate !== null
+                          ? editingInvoice.taxRate
+                          : 21;
+
+                      const calcTax =
+                        calcSubtotal * (Number(currentTaxRate) / 100);
+                      const calcTotal = calcSubtotal + calcTax;
+
+                      return (
+                        <div className="flex justify-end gap-6 text-sm border-t pt-4">
+                          <div className="text-right space-y-2 w-64">
+                            <p className="flex justify-between items-center">
+                              <span className="text-muted-foreground">
+                                Base Imponible:
+                              </span>
+                              <span className="font-medium">
+                                {calcSubtotal.toLocaleString("es-ES", {
+                                  minimumFractionDigits: 2,
+                                })}{" "}
+                                €
+                              </span>
+                            </p>
+
+                            <div className="flex justify-between items-center">
+                              <span className="text-muted-foreground flex items-center gap-2">
+                                % IVA:
+                                <Input
+                                  type="number"
+                                  disabled={isReadonly}
+                                  className="w-20 h-8 text-right px-2 disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
+                                  value={currentTaxRate}
+                                  onChange={(e) =>
+                                    setEditingInvoice({
+                                      ...editingInvoice,
+                                      taxRate: e.target.value,
+                                    })
+                                  }
+                                />
+                              </span>
+                              <span className="font-medium">
+                                {calcTax.toLocaleString("es-ES", {
+                                  minimumFractionDigits: 2,
+                                })}{" "}
+                                €
+                              </span>
+                            </div>
+
+                            <p className="flex justify-between items-center text-lg border-t pt-2 mt-2">
+                              <span className="font-bold">Total:</span>
+                              <span className="font-bold">
+                                {calcTotal.toLocaleString("es-ES", {
+                                  minimumFractionDigits: 2,
+                                })}{" "}
+                                €
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
-                  {/* Cálculo dinámico de totales */}
-                  {(() => {
-                    const currentItems = editingInvoice.items || [];
-                    const calcSubtotal = currentItems.reduce(
-                      (acc: number, item: any) =>
-                        acc +
-                        Number(item.quantity || 0) *
-                          Number(item.unitPrice || 0),
-                      0,
-                    );
-
-                    const currentTaxRate =
-                      editingInvoice.taxRate !== undefined &&
-                      editingInvoice.taxRate !== null
-                        ? editingInvoice.taxRate
-                        : 21;
-
-                    const calcTax =
-                      calcSubtotal * (Number(currentTaxRate) / 100);
-                    const calcTotal = calcSubtotal + calcTax;
-
-                    return (
-                      <div className="flex justify-end gap-6 text-sm border-t pt-4">
-                        <div className="text-right space-y-2 w-64">
-                          <p className="flex justify-between items-center">
-                            <span className="text-muted-foreground">
-                              Base Imponible:
-                            </span>
-                            <span className="font-medium">
-                              {calcSubtotal.toLocaleString("es-ES", {
-                                minimumFractionDigits: 2,
-                              })}{" "}
-                              €
-                            </span>
-                          </p>
-
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground flex items-center gap-2">
-                              % IVA:
-                              <Input
-                                type="number"
-                                disabled={isReadonly}
-                                className="w-20 h-8 text-right px-2 disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800"
-                                value={currentTaxRate}
-                                onChange={(e) =>
-                                  setEditingInvoice({
-                                    ...editingInvoice,
-                                    taxRate: e.target.value,
-                                  })
-                                }
-                              />
-                            </span>
-                            <span className="font-medium">
-                              {calcTax.toLocaleString("es-ES", {
-                                minimumFractionDigits: 2,
-                              })}{" "}
-                              €
-                            </span>
-                          </div>
-
-                          <p className="flex justify-between items-center text-lg border-t pt-2 mt-2">
-                            <span className="font-bold">Total:</span>
-                            <span className="font-bold">
-                              {calcTotal.toLocaleString("es-ES", {
-                                minimumFractionDigits: 2,
-                              })}{" "}
-                              €
-                            </span>
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                  {/* COLUMNA DERECHA: Visualizador del PDF Original o Autogenerado */}
+                  {!editingInvoice.isNew && (
+                    <div className="w-full h-full bg-zinc-100 dark:bg-zinc-900 flex flex-col items-center justify-center min-h-[350px] lg:min-h-0">
+                      <iframe
+                        src={
+                          editingInvoice.extractedData?.originalPdfName ||
+                          editingInvoice.extractedData?.pdfPath
+                            ? `/api/invoices/uploaded-pdf/${editingInvoice.id}#navpanes=0&toolbar=0`
+                            : `/api/invoice-pdf/${editingInvoice.id}#navpanes=0&toolbar=0`
+                        }
+                        className="w-full h-full border-0 min-h-[350px] lg:h-[calc(90vh-75px)]"
+                        title="Factura PDF"
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })()}
 
-          <DialogFooter className="flex flex-col sm:flex-row sm:justify-between items-center mt-6 pt-4 border-t gap-4">
+          <DialogFooter className="flex flex-col sm:flex-row sm:justify-between items-center px-6 py-4 border-t bg-gray-50 dark:bg-zinc-900/20 gap-4">
             <div className="flex gap-2 w-full sm:w-auto">
               {!editingInvoice?.isNew &&
                 (!editingInvoice?.status ||
@@ -2132,8 +2167,8 @@ export default function InvoicesPage() {
                             method: "DELETE",
                           });
                           toast({ title: "Documento eliminado" });
-                          setEditingInvoice(null); // <-- AÑADE ESTO
-                          fetchAllInvoices(); // <-- CAMBIA EL window.location.reload() POR ESTO
+                          setEditingInvoice(null);
+                          fetchAllInvoices();
                         } catch (e) {
                           toast({
                             title: "Error al borrar",
@@ -2152,7 +2187,10 @@ export default function InvoicesPage() {
                   className="text-blue-600 border-blue-200 hover:bg-blue-50"
                   onClick={() =>
                     window.open(
-                      `/api/invoice-pdf/${editingInvoice.id}`,
+                      editingInvoice.extractedData?.originalPdfName ||
+                        editingInvoice.extractedData?.pdfPath
+                        ? `/api/invoices/uploaded-pdf/${editingInvoice.id}`
+                        : `/api/invoice-pdf/${editingInvoice.id}`,
                       "_blank",
                     )
                   }
@@ -2178,7 +2216,6 @@ export default function InvoicesPage() {
                       }),
                     );
 
-                    // Sanear estado por si el cliente aceptó el dropdown
                     const safeStatus =
                       editingInvoice.status === "convert_to_invoice"
                         ? "borrador"
@@ -2195,7 +2232,7 @@ export default function InvoicesPage() {
                       clientId: editingInvoice.clientId,
                       projectId: editingInvoice.projectId,
                       type: safeType,
-                      clientName: editingInvoice.clientName, // Añadido para que se guarde si lo escribes a mano
+                      clientName: editingInvoice.clientName,
                       invoiceNumber: editingInvoice.invoiceNumber,
                       status: safeStatus,
                       issueDate: editingInvoice.issueDate,
@@ -2221,8 +2258,8 @@ export default function InvoicesPage() {
                         title: "Guardado exitoso",
                         description: "Los cambios se aplicaron correctamente.",
                       });
-                      setEditingInvoice(null); // Cierra el modal
-                      fetchAllInvoices(); // RECARGA SUAVE DE LA TABLA
+                      setEditingInvoice(null);
+                      fetchAllInvoices();
                     } else {
                       const errorData = await res.json();
                       toast({
