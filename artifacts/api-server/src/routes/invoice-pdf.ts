@@ -44,12 +44,20 @@ router.get("/invoice-pdf/:id", async (req, res) => {
       const absoluteFilePath = path.resolve(invoice.fileUrl);
       try {
         await access(absoluteFilePath);
+
         const downloadName =
           `${invoice.invoiceNumber || "factura"}.pdf`.replace(
             /[^a-zA-Z0-9._-]+/g,
             "_",
           );
-        return res.download(absoluteFilePath, downloadName);
+
+        // Cambiamos res.download por res.sendFile configurando la visualización inline
+        return res.sendFile(absoluteFilePath, {
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `inline; filename="${downloadName}"`,
+          },
+        });
       } catch (error) {
         console.warn(
           `No se pudo encontrar el PDF original de la factura ${invoice.id}; se generará la vista HTML.`,
