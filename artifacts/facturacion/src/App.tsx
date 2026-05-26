@@ -25,6 +25,7 @@ import RecurringCommitments from "@/pages/recurring-commitments";
 import DebtControlPage from "./pages/debt-control";
 import ReportsPage from "@/pages/informes";
 import AccountingPage from "@/pages/contabilidad";
+import PayrollPage from "@/pages/payroll";
 
 const queryClient = new QueryClient();
 
@@ -136,6 +137,11 @@ function PrivateApp() {
           <Route path="/informes">
             <ModuleGuard requiredModule="reports">
               <ReportsPage />
+            </ModuleGuard>
+          </Route>
+          <Route path="/payroll">
+            <ModuleGuard requiredModule="payroll">
+              <PayrollPage />
             </ModuleGuard>
           </Route>
           <Route path="/contabilidad">

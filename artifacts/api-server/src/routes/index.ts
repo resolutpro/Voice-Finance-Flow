@@ -24,6 +24,7 @@ import reportsRouter from "./reports";
 import invitationsRouter from "./invitations";
 import authRouter from "./auth";
 import authorizedUsersRouter from "./authorized-users";
+import payrollRouter from "./payroll";
 
 const router: IRouter = Router();
 
@@ -52,5 +53,6 @@ router.use(reportsRouter);
 router.use(invitationsRouter);
 router.use(authRouter);
 router.use(authorizedUsersRouter);
+router.use(payrollRouter);
 
 export default router;

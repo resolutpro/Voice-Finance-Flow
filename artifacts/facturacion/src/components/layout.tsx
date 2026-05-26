@@ -14,6 +14,7 @@ import {
   BarChart,
   Calculator,
   ChevronLeft,
+  Users,
 } from "lucide-react";
 import { useCompany } from "@/hooks/use-company";
 import { useListCompanies, useSeedData } from "@workspace/api-client-react";
@@ -75,6 +76,12 @@ const navItems = [
     label: "Contabilidad",
     icon: Calculator,
     moduleId: "accounting",
+  },
+  {
+    href: "/payroll",
+    label: "Nóminas",
+    icon: Users,
+    moduleId: "payroll",
   },
   { href: "/tasks", label: "Tareas", icon: CheckSquare, moduleId: "tasks" },
   {
