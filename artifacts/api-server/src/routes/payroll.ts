@@ -2,20 +2,31 @@ import { Router, type IRouter } from "express";
 import OpenAI from "openai";
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 import multer from "multer";
-import { db, invoicesTable, payablesTable, payrollUploadsTable } from "@workspace/db";
+import {
+  db,
+  invoicesTable,
+  payablesTable,
+  payrollUploadsTable,
+} from "@workspace/db";
 
 const router: IRouter = Router();
 const openai = new OpenAI();
 const upload = multer({ storage: multer.memoryStorage() });
 
+// 1. Modificamos el esquema para recibir un array de números en la SS
 const parserSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["fecha_nomina", "total_irpf", "total_seguridad_social_empresa"],
+  required: ["fecha_nomina", "total_irpf", "cuotas_seguridad_social_empresa"],
   properties: {
     fecha_nomina: { type: "string", description: "Fecha YYYY-MM-DD" },
     total_irpf: { type: "number" },
-    total_seguridad_social_empresa: { type: "number" },
+    cuotas_seguridad_social_empresa: {
+      type: "array",
+      items: { type: "number" },
+      description:
+        "Lista de todos los importes individuales de las cuotas empresariales",
+    },
   },
 } as const;
 
@@ -74,110 +85,124 @@ router.get("/payroll/uploads", async (req, res): Promise<void> => {
   res.json(items);
 });
 
-router.post("/payroll/uploads", upload.single("file"), async (req, res): Promise<void> => {
-  try {
-    const file = (req as any).file as Express.Multer.File | undefined;
-    const companyId = Number(req.body.companyId);
+router.post(
+  "/payroll/uploads",
+  upload.single("file"),
+  async (req, res): Promise<void> => {
+    try {
+      const file = (req as any).file as Express.Multer.File | undefined;
+      const companyId = Number(req.body.companyId);
 
-    if (!companyId) {
-      res.status(400).json({ error: "companyId es obligatorio" });
-      return;
-    }
+      if (!companyId) {
+        res.status(400).json({ error: "companyId es obligatorio" });
+        return;
+      }
 
-    if (!file || file.mimetype !== "application/pdf") {
-      res.status(400).json({ error: "Debes subir un PDF de nómina" });
-      return;
-    }
+      if (!file || file.mimetype !== "application/pdf") {
+        res.status(400).json({ error: "Debes subir un PDF de nómina" });
+        return;
+      }
 
-    const response = await openai.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
-        {
-          role: "system",
-          content: [
-            {
-              type: "input_text",
-              text: "Extrae los datos de nómina y responde SOLO JSON válido con fecha_nomina YYYY-MM-DD, total_irpf y total_seguridad_social_empresa como número.",
-            },
-          ],
+      const response = await openai.responses.create({
+        model: "gpt-4.1-mini",
+        input: [
+          {
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                // 2. Ajustamos el prompt para pedir un array de números sin sumar
+                text: "Extrae de la nómina SOLO JSON válido con: fecha_nomina YYYY-MM-DD, total_irpf (número) y cuotas_seguridad_social_empresa como un array de números. En el array cuotas_seguridad_social_empresa incluye TODOS los importes individuales de las cuotas empresariales de Seguridad Social (Contingencias comunes, MEI, AT y EP, Desempleo, Formación Profesional, FOGASA, horas extra, solidaridad, etc.). NO los sumes, extrae cada importe individual. Usa el importe final de cada línea, no base ni porcentaje. No incluyas cuotas del trabajador. Convierte coma decimal a punto.",
+              },
+            ],
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_file",
+                filename: file.originalname,
+                file_data: `data:application/pdf;base64,${file.buffer.toString("base64")}`,
+              },
+            ],
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "payroll_extract",
+            schema: parserSchema,
+            strict: true,
+          },
         },
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_file",
-              filename: file.originalname,
-              file_data: `data:application/pdf;base64,${file.buffer.toString("base64")}`,
-            },
-          ],
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "payroll_extract",
-          schema: parserSchema,
-          strict: true,
-        },
-      },
-    });
-
-    const parsed = JSON.parse(response.output_text);
-    const payrollDate = parsed.fecha_nomina;
-    const totalIrpf = Number(parsed.total_irpf);
-    const totalSs = Number(parsed.total_seguridad_social_empresa);
-
-    const ssDueDate = formatDate(lastDayOfMonth(new Date(`${payrollDate}T00:00:00.000Z`)));
-    const taxDueDate = quarterPaymentDate(payrollDate);
-
-    const [upload] = await db
-      .insert(payrollUploadsTable)
-      .values({
-        companyId,
-        payrollDate,
-        totalIrpf: totalIrpf.toFixed(2),
-        totalSeguridadSocialEmpresa: totalSs.toFixed(2),
-        processingStatus: "processed",
-        sourceFileName: file.originalname,
-      })
-      .returning();
-
-    if (totalSs > 0) {
-      await db.insert(payablesTable).values({
-        companyId,
-        description: `Seguridad Social Empresa nómina ${payrollDate}`,
-        amount: totalSs.toFixed(2),
-        dueDate: ssDueDate,
-        status: "pending",
       });
-    }
 
-    if (totalIrpf > 0) {
-      await db.insert(payablesTable).values({
-        companyId,
-        description: `IRPF trimestral nómina ${payrollDate}`,
-        amount: totalIrpf.toFixed(2),
-        dueDate: taxDueDate,
-        status: "pending",
-      });
-    }
+      const parsed = JSON.parse(response.output_text);
+      const payrollDate = parsed.fecha_nomina;
+      const totalIrpf = Number(parsed.total_irpf);
 
-    const ivaAmount = await getQuarterlyIva(companyId, payrollDate);
-    if (ivaAmount > 0) {
-      await db.insert(payablesTable).values({
-        companyId,
-        description: `IVA trimestral emitidas (${payrollDate})`,
-        amount: ivaAmount.toFixed(2),
-        dueDate: taxDueDate,
-        status: "pending",
-      });
-    }
+      // 3. Sumamos nosotros el total de las cuotas extraídas
+      const cuotasSs = parsed.cuotas_seguridad_social_empresa || [];
+      const totalSs = cuotasSs.reduce(
+        (acc: number, curr: number) => acc + Number(curr),
+        0,
+      );
 
-    // Flujo seguro: no persistimos PDF; buffer queda elegible para GC.
-    res.status(201).json(upload);
-  } catch (error: any) {
-    res.status(500).json({ error: error?.message || "Error procesando nómina" });
-  }
-});
+      const ssDueDate = formatDate(
+        lastDayOfMonth(new Date(`${payrollDate}T00:00:00.000Z`)),
+      );
+      const taxDueDate = quarterPaymentDate(payrollDate);
+
+      const [upload] = await db
+        .insert(payrollUploadsTable)
+        .values({
+          companyId,
+          payrollDate,
+          totalIrpf: totalIrpf.toFixed(2),
+          totalSeguridadSocialEmpresa: totalSs.toFixed(2),
+          processingStatus: "processed",
+          sourceFileName: file.originalname,
+        })
+        .returning();
+
+      if (totalSs > 0) {
+        await db.insert(payablesTable).values({
+          companyId,
+          description: `Seguridad Social Empresa nómina ${payrollDate}`,
+          amount: totalSs.toFixed(2),
+          dueDate: ssDueDate,
+          status: "pending",
+        });
+      }
+
+      if (totalIrpf > 0) {
+        await db.insert(payablesTable).values({
+          companyId,
+          description: `IRPF trimestral nómina ${payrollDate}`,
+          amount: totalIrpf.toFixed(2),
+          dueDate: taxDueDate,
+          status: "pending",
+        });
+      }
+
+      const ivaAmount = await getQuarterlyIva(companyId, payrollDate);
+      if (ivaAmount > 0) {
+        await db.insert(payablesTable).values({
+          companyId,
+          description: `IVA trimestral emitidas (${payrollDate})`,
+          amount: ivaAmount.toFixed(2),
+          dueDate: taxDueDate,
+          status: "pending",
+        });
+      }
+
+      res.status(201).json(upload);
+    } catch (error: any) {
+      res
+        .status(500)
+        .json({ error: error?.message || "Error procesando nómina" });
+    }
+  },
+);
 
 export default router;

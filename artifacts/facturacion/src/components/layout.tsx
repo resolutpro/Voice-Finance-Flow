@@ -41,6 +41,12 @@ const navItems = [
     moduleId: "invoices",
   },
   {
+    href: "/payroll",
+    label: "Nóminas",
+    icon: Users,
+    moduleId: "payroll",
+  },
+  {
     label: "Gastos recurrentes",
     href: "/compromisos",
     icon: Repeat,
@@ -76,12 +82,6 @@ const navItems = [
     label: "Contabilidad",
     icon: Calculator,
     moduleId: "accounting",
-  },
-  {
-    href: "/payroll",
-    label: "Nóminas",
-    icon: Users,
-    moduleId: "payroll",
   },
   { href: "/tasks", label: "Tareas", icon: CheckSquare, moduleId: "tasks" },
   {
